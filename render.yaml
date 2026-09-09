@@ -1,0 +1,22 @@
+# Blueprint: web service plus a free Postgres instance.
+services:
+  - type: web
+    name: assetops
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: assetops-db, property: connectionString }
+      - key: ADMIN_EMAIL
+        sync: false          # set this in the dashboard
+      - key: ADMIN_PASSWORD
+        sync: false          # set this in the dashboard; never commit it
+
+databases:
+  - name: assetops-db
+    plan: free
+    databaseName: assetops

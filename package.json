@@ -1,0 +1,22 @@
+{
+  "name": "assetops",
+  "version": "2.0.0",
+  "private": true,
+  "description": "IT asset register with authentication, per-record storage and server-side upload validation",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node client-src/build.js --check && node --test tests/*.test.js",
+    "build": "node client-src/build.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.0"
+  }
+}
