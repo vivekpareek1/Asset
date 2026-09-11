@@ -45,11 +45,28 @@ Yeh khaali register par hi chalta hai. Bhare hue par `--force` maangta hai.
 Postgres ke saath:
 
 ```bash
-DATABASE_URL=postgres://... npm start
+DATABASE_URL=postgres://... PG_SCHEMA=assetops npm start
 ```
 
 Bina `DATABASE_URL` ke SQLite file use hoti hai (`data/assetops.db`).
 Dono ke liye SQL ek hi hai, sirf placeholder style alag hai.
+
+### Shared database
+
+Yeh deployment ek **shared** Postgres database use karta hai — Render free
+tier mein ek account mein ek hi free database chal sakta hai, aur yahan
+pehle se ek doosre project (DMS) ka database maujood tha.
+
+Isliye AssetOps apni saari 12 tables ek **alag Postgres schema** (`assetops`,
+`PG_SCHEMA` se set hota hai) mein banata hai — `public` schema mein nahi.
+Doosre project ki `users`, `settings` jaisi tables se koi naam ka takraav
+nahi hota. Yeh asli Postgres ke against test kiya gaya hai: doosre project
+jaisi tables banakar, AssetOps chalakar, confirm kiya ki dono ek doosre ko
+chhoote tak nahi.
+
+**Dhyan rakhein:** yeh ek hi database ka storage aur connection limit dono
+projects share karte hain (free tier: 1 GB, ~sau connections). AssetOps
+badhne lage to apna alag database lena behtar hoga.
 
 ## API
 
@@ -116,6 +133,79 @@ npm test
 | `tests/audit.test.js` | injection, privilege escalation, headers |
 | `tests/views.test.js` | har role ke liye har screen, XSS ke saath |
 
+Poore suite ko dono drivers par chalaya ja sakta hai:
+
+```bash
+npm test                                          # SQLite (default)
+TEST_DATABASE_URL=postgres://... npm test         # asli Postgres, per-test schema
+```
+
+## Real Postgres se mila ek asli race condition
+
+Deploy se pehle poora backend asli Postgres ke against chalaya (pehle sirf
+SQLite tha, jo single-writer hone ki wajah se races chhupa deta hai). Isse
+ek asli bug pakda:
+
+Auto-generated asset tag, site code, company code, custom field label, aur
+user email banate waqt "pehle check karo khaali hai kya, phir insert karo"
+pattern tha. Do requests ek saath aayein to dono check pass kar jaate, phir
+dono insert karte - ek fail hoti raw database error ke saath. Sabko theek
+kiya: pehle wala check advisory hai, asli check ab INSERT/UPDATE par hai -
+collision par saaf 409, raw error nahi.
+
+Import ke andar aur bhi bura tha - Postgres mein ek statement fail hone par
+poori transaction abort ho jaati hai (SQLite aisa nahi karta). SAVEPOINT
+laga kar fix kiya, taaki ek row skip ho, poora batch na toote.
+
+Verify kiya asli Postgres par: 6 clients se ek saath same site code
+bhejwaya - exactly ek jeetta hai, baaki saaf 409 dete hain. Import aur live
+asset-creation ek saath chalakar bhi check kiya.
+
+## Seed data mein ek deploy-crashing bug tha
+
+Asset ke serial column par ek UNIQUE INDEX lagaya suraksha ke liye (dekhein
+"Smart import matching" niche). Test karte waqt pata chala ki seed data
+mein khud ek duplicate serial tha (mere apne synthetic serial-generator ka
+collision) - do assets ek hi serial ke saath. Isse pehli boot par hi app
+crash ho jaata, kyunki CREATE UNIQUE INDEX existing duplicate data ke saath
+fail hota hai.
+
+Do fix kiye:
+1. Seed data se duplicate hataya.
+2. Migration ko resilient banaya - ab agar kisi purane database mein pehle
+   se duplicate data hai, app crash nahi hoga. Ek warning log hoga, aur
+   baaki sab kaam karega. Dono SQLite aur Postgres par real duplicate data
+   ke saath test kiya gaya hai.
+
+## Smart import matching
+
+Jab file upload karein, matching is priority se hoti hai:
+
+1. Asset tag se match - agar tag diya hai aur match hota hai, update.
+2. Serial number se match - tag nahi diya, par serial match karta hai, to
+   update. Do alag assets ka serial same nikle, to safe side lekar skip kar
+   diya jaata hai.
+3. Kuch match nahi - naya asset ban jaata hai.
+
+Serial ambiguous nikle, ya file ke andar hi ek row doosri se duplicate ho,
+to woh row skip hoti hai aur kyun skip hui yeh saaf batati hai.
+
+Import ke baad ek naya results screen dikhta hai - har row ka result
+(Added / Updated / Skipped) aur wajah. Khaali cell purani value nahi
+mitati - sirf jo naya value diya hai woh update hota hai.
+
+## Apne hi workflow mein ek bug pakda
+
+Client code do jagah tha - project root aur client-src/ folder mein alag
+copy. Build script hamesha client-src/ se banata tha. Is turn mein root
+files edit kiye bina client-src/ sync kiye - naya import-results feature
+silently build se gayab ho gaya tha.
+
+Pakad kar theek kiya: ab sirf client-src/ hi source hai, root par koi
+duplicate copy nahi. Yeh sirf is turn ke kaam ko affect karta tha - pehle
+deliver ki gayi zip files theek thi, kyunki un turns mein client-side files
+touch hi nahi hui thi.
+
 ## Sign-in aur recovery
 
 **Two-step sign-in (2FA)** — header mein "Security" par click kariye. Secret
@@ -149,6 +239,28 @@ Admin token aapko kisi bharose ke channel se dena hoga — app khud nahi bhejti.
   badalni hogi.
 - **2FA sirf apne account par** set kar sakte hain. Admin doosre ka 2FA reset
   nahi kar sakta — abhi recovery code hi raasta hai.
+
+## Ek audit chalaya, race condition mila
+
+Deploy se pehle poora backend **asli Postgres** ke against chalaya (pehle
+sirf SQLite tha, jo single-writer hone ki wajah se races chhupa deta hai).
+Isse ek asli bug pakda:
+
+**Auto-generated asset tag banate waqt, do requests ek saath aayein to dono
+"yeh tag khaali hai" dekh lete the, phir dono insert karte — ek fail hoti
+thi raw database error ke saath**, jo client tak leak ho sakta tha. Yehi
+pattern site code, company code, custom field label, aur user email banane
+mein bhi tha.
+
+Sabko theek kiya: pehle wala check advisory hai, asli check ab INSERT/UPDATE
+par hai — agar collision ho, toh saaf 409 milta hai, raw error nahi. Import
+ke andar, Postgres transactions poore batch ko abort kar dete hain agar ek
+row fail ho (SQLite aisa nahi karta) — isliye SAVEPOINT lagaya taaki ek row
+skip ho, poora import na toote.
+
+Verify kiya: 5-8 concurrent requests bhejkar — exactly ek jeetta hai, baaki
+saaf 409 dete hain, koi crash nahi. Import aur live asset-creation ek saath
+chalakar bhi — dono sahi rehte hain, koi duplicate tag nahi banta.
 
 ## Pichhli chetavniyan — ab band
 

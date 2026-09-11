@@ -1,0 +1,11 @@
+node_modules/
+data/
+.env
+.env.*
+*.log
+
+# Build output of client-src/build.js is committed on purpose: the server
+# serves public/index.html directly, with no build step at deploy time.
+
+# Isme asli employee names hain.
+local/

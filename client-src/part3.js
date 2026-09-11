@@ -46,12 +46,12 @@ function renderShell(){
   $('#security').onclick=()=>{PWOPEN=true;render();};
   if(innerWidth<=820){$('#menu').style.display='';$('#menu').onclick=()=>$('#rail').classList.toggle('open');}
 }
-const TITLES={dash:'Fleet overview',assets:'Asset register',add:'Add asset',import:'Import data',reports:'Reports',sites:'Companies & sites',depts:'Departments',fields:'Custom fields',users:'Portal users',theme:'Theme settings',uploadtests:'Upload tests',log:'Activity log'};
+const TITLES={dash:'Fleet overview',assets:'Asset register',add:'Add asset',import:'Import data',importResult:'Import results',reports:'Reports',sites:'Companies & sites',depts:'Departments',fields:'Custom fields',users:'Portal users',theme:'Theme settings',uploadtests:'Upload tests',log:'Activity log'};
 function render(){
   renderShell();
   $('#ttl').textContent=TITLES[VIEW]||'';
   const v=$('#view');
-  ({dash:vDash,assets:vAssets,add:vAdd,import:vImport,reports:vReports,sites:vSites,depts:vDepts,fields:vFields,users:vUsers,theme:vTheme,uploadtests:vUploadTests,log:vLog}[VIEW]||vDash)(v);
+  ({dash:vDash,assets:vAssets,add:vAdd,import:vImport,importResult:vImportResult,reports:vReports,sites:vSites,depts:vDepts,fields:vFields,users:vUsers,theme:vTheme,uploadtests:vUploadTests,log:vLog}[VIEW]||vDash)(v);
   if(DRAWER)openDrawer(DRAWER,true);
   if(TRESET)document.body.insertAdjacentHTML('beforeend',resetModal());
   bindResetModal();

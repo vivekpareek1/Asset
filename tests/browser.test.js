@@ -379,3 +379,42 @@ test('an import carrying custom field values reaches the database', async () => 
   assert.equal(JSON.parse(row.custom).invoice_number, 'INV-4242');
   await b.close();
 });
+
+test('import results show row-by-row detail, including why a row was skipped', async () => {
+  const b = await browser();
+  await signIn(b);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'sites')); await wait(200);
+  b.$('#sname').value = 'HO'; b.$('#scode').value = 'HO'; b.click(b.$('#saddb')); await wait(500);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'depts')); await wait(200);
+  b.$('#dname').value = 'IT'; b.click(b.$('#daddb')); await wait(500);
+
+  // Seed one real asset with a serial via the normal add form.
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'add')); await wait(250);
+  b.$('#n_user').value = 'Original Owner';
+  b.$('#n_serial').value = 'SN-REAL-01';
+  b.click(b.$('#nsave')); await wait(700);
+
+  // Re-"upload" the same physical asset (same serial, updated vendor) plus one
+  // genuinely new row plus one row that collides on tag with something else.
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'import')); await wait(250);
+  b.$('#ipaste').value =
+    'User name,Serial,Vendor\n' +
+    'Original Owner,SN-REAL-01,Now From Ingram\n' +
+    'Brand New Person,SN-REAL-02,Compuage';
+  b.click(b.$('#iparse'));
+  await wait(400);
+  b.click(b.$('#idoit'));
+  await wait(900);
+
+  assert.ok(b.$('.stat'), 'the results view rendered');
+  const text = b.w.document.body.textContent;
+  assert.match(text, /1[^\d]*New assets added|New assets added[^\d]*1/s);
+  assert.match(text, /Updated/);
+  assert.ok(b.$$('table tbody tr').length >= 2, 'row-by-row table is populated');
+
+  const row = await b.db.get("SELECT vendor FROM assets WHERE serial = 'SN-REAL-01'");
+  assert.equal(row.vendor, 'Now From Ingram', 'matched by serial and updated in place, no duplicate');
+  const total = await b.db.get('SELECT count(*) AS c FROM assets');
+  assert.equal(Number(total.c), 2, 'one updated in place, one genuinely new — never three');
+  await b.close();
+});

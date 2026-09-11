@@ -6,16 +6,24 @@ const A = require('../src/auth');
 const ADMIN = { email: 'admin@example.com', password: 'a-strong-admin-pass' };
 
 /** A fresh in-memory app per test: no shared state, no ordering surprises. */
+let PG_COUNTER = 0;
 async function harness() {
-  // Throttle counters live in the database, which is fresh per harness.
   process.env.ADMIN_EMAIL = ADMIN.email;
   process.env.ADMIN_PASSWORD = ADMIN.password;
-  const db = openDb({ url: null, file: ':memory:' });
+  let db;
+  if (process.env.TEST_DATABASE_URL) {
+    // Real-Postgres mode: each test gets its own schema on the SAME shared
+    // database, exercising the exact isolation this deployment relies on.
+    const schema = 'test_' + (Date.now() % 100000) + '_' + (PG_COUNTER++);
+    db = openDb({ url: process.env.TEST_DATABASE_URL, schema });
+  } else {
+    db = openDb({ url: null, file: ':memory:' });
+  }
   const app = await createApp({ db });
   return { app, db };
 }
 
-/** Minimal supertest replacement so the tests need no extra dependency. */
+/** Minimal supertest/** Minimal supertest replacement so the tests need no extra dependency. */
 function client(app) {
   const http = require('node:http');
   let cookie = null;

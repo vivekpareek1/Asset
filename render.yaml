@@ -1,22 +1,23 @@
-# Blueprint: web service plus a free Postgres instance.
+# Blueprint for the web service only. There is no `databases:` block here on
+# purpose: this deployment shares an existing Postgres instance (its free
+# tier is one-per-account) rather than creating a new one, isolated by
+# Postgres schema (see PG_SCHEMA below and src/db.js). Point DATABASE_URL at
+# that existing instance's connection string in the dashboard.
 services:
   - type: web
     name: assetops
     runtime: node
     plan: free
-    region: oregon
+    region: singapore
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
-        fromDatabase: { name: assetops-db, property: connectionString }
+        sync: false          # set in the dashboard: the SHARED database's connection string
+      - key: PG_SCHEMA
+        value: assetops       # keeps this app's tables out of the other project's way
       - key: ADMIN_EMAIL
-        sync: false          # set this in the dashboard
+        sync: false
       - key: ADMIN_PASSWORD
-        sync: false          # set this in the dashboard; never commit it
-
-databases:
-  - name: assetops-db
-    plan: free
-    databaseName: assetops
+        sync: false

@@ -12,7 +12,7 @@ const A = require('./auth');
 const L = require('./logo');
 const T = require('./totp');
 const crypto = require('node:crypto');
-const { uid, nowISO } = require('./db');
+const { uid, nowISO, isUniqueViolation, duplicateField } = require('./db');
 
 const sha256 = v => crypto.createHash('sha256').update(String(v)).digest('hex');
 
@@ -114,6 +114,22 @@ function validateAsset(body, { partial = false, sites, depts } = {}) {
   }
   return { valid: Object.keys(e).length === 0, errors: e, value: v };
 }
+
+/**
+ * Finds the asset already holding a serial number, so the rejection can name
+ * it — "already used by HO-PC-014 (Priya Singh)" tells the person exactly
+ * where to look, instead of a bare "duplicate".
+ */
+async function findBySerial(db, serial, excludeId) {
+  if (!serial) return null;
+  return db.get(
+    excludeId
+      ? 'SELECT tag, user_name FROM assets WHERE lower(serial) = lower(?) AND id <> ?'
+      : 'SELECT tag, user_name FROM assets WHERE lower(serial) = lower(?)',
+    excludeId ? [serial, excludeId] : [serial]
+  );
+}
+const serialTakenMessage = row => `Serial number is already recorded on ${row.tag}${row.user_name ? ` (${row.user_name})` : ''}.`;
 
 async function freshUser(db, id) {
   return A.shapeUser(await db.get('SELECT * FROM users WHERE id = ?', [id]));
@@ -364,12 +380,26 @@ function createRouter({ db, log }) {
     if (!A.siteAllowed(req.user, value.siteCode)) {
       return fail(res, 403, 'FORBIDDEN', 'You do not have access to that site.');
     }
-    const tag = value.tag || await nextTag(db, value.siteCode);
-    const clash = await db.get('SELECT id FROM assets WHERE lower(tag) = lower(?)', [tag]);
-    if (clash) return fail(res, 409, 'TAG_IN_USE', `Asset tag ${tag} is already in use.`);
+    // An explicit tag is checked once and, if taken, rejected outright — the
+    // person asked for that exact tag, so silently picking another would be
+    // wrong. An auto-generated tag is retried on collision instead, since any
+    // free tag satisfies the request and a collision there is just two people
+    // creating assets on the same site at the same moment.
+    const wantedTag = value.tag || null;
+    if (wantedTag) {
+      const clash = await db.get('SELECT id FROM assets WHERE lower(tag) = lower(?)', [wantedTag]);
+      if (clash) return fail(res, 409, 'TAG_IN_USE', `Asset tag ${wantedTag} is already in use.`, { fields: { tag: `Asset tag ${wantedTag} is already in use.` } });
+    }
+    // Serial numbers identify physical hardware, so two assets sharing one is
+    // almost always a mistake worth catching before it is saved, not after.
+    // Blank is exempt: most of this register's legacy stock has no recorded serial.
+    if (value.serial) {
+      const dupe = await findBySerial(db, value.serial, null);
+      if (dupe) return fail(res, 409, 'DUPLICATE_SERIAL', serialTakenMessage(dupe), { fields: { serial: serialTakenMessage(dupe) } });
+    }
 
     const id = uid('a');
-    await db.run(
+    const insertOne = async tag => db.run(
       `INSERT INTO assets (id,tag,serial,asset_type,brand,model,user_name,dept,site_code,cpu,ram,storage,os,
         status,vendor,purchase_price,purchase_year,warranty_end,custom,attachments,version,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
@@ -378,6 +408,32 @@ function createRouter({ db, log }) {
        value.storage || '', value.os || '', value.status || 'In use', value.vendor || '',
        value.purchasePrice ?? null, value.purchaseYear ?? null, value.warrantyEnd || '',
        JSON.stringify(value.custom || {}), '[]', nowISO()]);
+
+    let tag = wantedTag || await nextTag(db, value.siteCode);
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await insertOne(tag);
+        break;
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+        // The two pre-checks above are advisory; this DB-level catch is what
+        // actually protects against two requests landing at the same instant.
+        // duplicateField tells us WHICH constraint fired, so a serial race
+        // is never misreported — and never blindly retried — as a tag problem.
+        const col = duplicateField(err);
+        if (col === 'serial') {
+          const dupe = await findBySerial(db, value.serial, null);
+          return fail(res, 409, 'DUPLICATE_SERIAL', dupe ? serialTakenMessage(dupe) : 'That serial number is already recorded.',
+            { fields: { serial: dupe ? serialTakenMessage(dupe) : 'Already recorded on another asset.' } });
+        }
+        if (wantedTag) return fail(res, 409, 'TAG_IN_USE', `Asset tag ${wantedTag} is already in use.`, { fields: { tag: `Asset tag ${wantedTag} is already in use.` } });
+        if (attempt >= MAX_RETRIES) {
+          return fail(res, 409, 'TAG_IN_USE', 'Could not allocate a free asset tag. Try again.');
+        }
+        tag = await nextTag(db, value.siteCode);   // someone else just took the old one; pick the next
+      }
+    }
     await log(db, req.user.name, 'Created', `${tag} — ${value.user}`);
     res.status(201).json({ asset: rowToAsset(await db.get('SELECT * FROM assets WHERE id=?', [id])) });
   });
@@ -405,7 +461,11 @@ function createRouter({ db, log }) {
     }
     if (value.tag && value.tag.toLowerCase() !== existing.tag.toLowerCase()) {
       const clash = await db.get('SELECT id FROM assets WHERE lower(tag)=lower(?) AND id<>?', [value.tag, existing.id]);
-      if (clash) return fail(res, 409, 'TAG_IN_USE', `Asset tag ${value.tag} is already in use.`);
+      if (clash) return fail(res, 409, 'TAG_IN_USE', `Asset tag ${value.tag} is already in use.`, { fields: { tag: `Asset tag ${value.tag} is already in use.` } });
+    }
+    if (value.serial !== undefined && value.serial && value.serial.toLowerCase() !== existing.serial.toLowerCase()) {
+      const dupe = await findBySerial(db, value.serial, existing.id);
+      if (dupe) return fail(res, 409, 'DUPLICATE_SERIAL', serialTakenMessage(dupe), { fields: { serial: serialTakenMessage(dupe) } });
     }
 
     const map = { tag:'tag', serial:'serial', type:'asset_type', brand:'brand', model:'model', user:'user_name',
@@ -420,8 +480,23 @@ function createRouter({ db, log }) {
     params.push(nowISO(), existing.id, clientVersion);
 
     // The version is re-checked inside the UPDATE, so two requests arriving at
-    // the same instant cannot both pass the read above and both write.
-    const out = await db.run(`UPDATE assets SET ${sets.join(', ')} WHERE id = ? AND version = ?`, params);
+    // the same instant cannot both pass the read above and both write. A tag
+    // or serial collision can still surface here if someone else claimed that
+    // exact value in the gap since the pre-checks above — caught explicitly,
+    // naming the right field, rather than leaking a raw database error.
+    let out;
+    try {
+      out = await db.run(`UPDATE assets SET ${sets.join(', ')} WHERE id = ? AND version = ?`, params);
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      const col = duplicateField(err);
+      if (col === 'serial') {
+        const dupe = await findBySerial(db, value.serial, existing.id);
+        return fail(res, 409, 'DUPLICATE_SERIAL', dupe ? serialTakenMessage(dupe) : 'That serial number is already recorded.',
+          { fields: { serial: dupe ? serialTakenMessage(dupe) : 'Already recorded on another asset.' } });
+      }
+      return fail(res, 409, 'TAG_IN_USE', `Asset tag ${value.tag} is already in use.`, { fields: { tag: `Asset tag ${value.tag} is already in use.` } });
+    }
     if (!out.changes) {
       const now = await db.get('SELECT * FROM assets WHERE id = ?', [existing.id]);
       return fail(res, 409, 'CONFLICT', 'Someone else changed this asset a moment ago.', { current: rowToAsset(now) });
@@ -476,46 +551,138 @@ function createRouter({ db, log }) {
     const m = await masters();
     const siteCodes = new Set(m.sites.map(s => s.code));
     const deptNames = new Set(m.depts.map(d => d.name));
-    // Custom values arrive under rec.custom; only declared keys are accepted, so
-    // an import cannot invent columns.
     const fieldDefs = await db.all('SELECT * FROM custom_fields');
     const fieldKeys = new Set(fieldDefs.map(f => f.field_key));
     const pickCustom = raw => {
       const out = {};
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-      for (const [k, v] of Object.entries(raw)) {
-        if (fieldKeys.has(k)) out[k] = str(v, 200);
-      }
+      for (const [k, v] of Object.entries(raw)) if (fieldKeys.has(k)) out[k] = str(v, 200);
       return out;
     };
 
+    /**
+     * In-batch duplicate detection, BEFORE anything touches the database.
+     * Two rows sharing a tag or serial within the same uploaded file is
+     * almost always a copy-paste mistake in the source sheet, not a
+     * deliberate re-import — so only the first occurrence of each value
+     * proceeds, and every later one is reported by row number rather than
+     * silently merged into the first or silently dropped.
+     */
+    function findBatchDuplicates() {
+      const byTag = new Map(), bySerial = new Map();
+      rows.forEach((raw, i) => {
+        const rec = raw && typeof raw === 'object' ? raw : {};
+        const tag = str(rec.tag, 60).toLowerCase();
+        const serial = str(rec.serial, 160).toLowerCase();
+        if (tag) { if (!byTag.has(tag)) byTag.set(tag, []); byTag.get(tag).push(i); }
+        if (serial) { if (!bySerial.has(serial)) bySerial.set(serial, []); bySerial.get(serial).push(i); }
+      });
+      const skipRow = new Map();   // row index -> { field, value, firstRow }
+      for (const [value, idxs] of byTag) {
+        if (idxs.length < 2) continue;
+        for (let k = 1; k < idxs.length; k++) skipRow.set(idxs[k], { field: 'tag', value: rows[idxs[k]].tag, firstRow: idxs[0] + 1 });
+      }
+      for (const [value, idxs] of bySerial) {
+        if (idxs.length < 2) continue;
+        for (let k = 1; k < idxs.length; k++) if (!skipRow.has(idxs[k])) {
+          skipRow.set(idxs[k], { field: 'serial', value: rows[idxs[k]].serial, firstRow: idxs[0] + 1 });
+        }
+      }
+      return skipRow;
+    }
+    const batchDupes = findBatchDuplicates();
+
+    let spCounter = 0;
+    /** Postgres poisons a whole transaction on any statement error; SAVEPOINT scopes that to one row. */
+    async function guarded(t, fn) {
+      if (t.kind !== 'postgres') {
+        try { return { ok: true, value: await fn() }; }
+        catch (err) { if (isUniqueViolation(err)) return { ok: false, err }; throw err; }
+      }
+      const sp = `imp_${spCounter++}`;
+      await t.run(`SAVEPOINT ${sp}`);
+      try {
+        const value = await fn();
+        await t.run(`RELEASE SAVEPOINT ${sp}`);
+        return { ok: true, value };
+      } catch (err) {
+        await t.run(`ROLLBACK TO SAVEPOINT ${sp}`);
+        await t.run(`RELEASE SAVEPOINT ${sp}`);
+        if (isUniqueViolation(err)) return { ok: false, err };
+        throw err;
+      }
+    }
+
+    const report = [];    // one entry per row: the detail behind every created/updated/skipped count
+    const note = (rowNum, action, extra) => report.push({ row: rowNum, action, ...extra });
+
     const result = await db.tx(async t => {
       let created = 0, updated = 0, skipped = 0;
-      for (const raw of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const rowNum = i + 1;
+        const raw = rows[i];
         const rec = raw && typeof raw === 'object' ? raw : {};
         const user = str(rec.user, 120);
         const tag = str(rec.tag, 60);
-        if (!user && !tag) { skipped++; continue; }
+        const serial = str(rec.serial, 160);
 
-        // Resolve the existing row first. A row that names an asset by tag is an
-        // update, and an update must not have to restate the site it is already in.
-        const existing = tag ? await t.get('SELECT * FROM assets WHERE lower(tag)=lower(?)', [tag]) : null;
+        if (batchDupes.has(i)) {
+          const d = batchDupes.get(i);
+          skipped++;
+          note(rowNum, 'skipped', { field: d.field, value: d.value,
+            reason: `Duplicate ${d.field} — same as row ${d.firstRow} in this file.` });
+          continue;
+        }
+        if (!user && !tag && !serial) {
+          skipped++; note(rowNum, 'skipped', { reason: 'No assigned-to, tag, or serial number to identify this row.' });
+          continue;
+        }
+
+        let existing = tag ? await t.get('SELECT * FROM assets WHERE lower(tag)=lower(?)', [tag]) : null;
+        let ambiguousSerial = false;
+        if (!existing && serial) {
+          const bySerial = await t.all("SELECT * FROM assets WHERE serial <> '' AND lower(serial) = lower(?)", [serial]);
+          if (bySerial.length === 1) existing = bySerial[0];
+          else if (bySerial.length > 1) ambiguousSerial = true;
+        }
+        if (ambiguousSerial) {
+          skipped++; note(rowNum, 'skipped', { field: 'serial', value: serial,
+            reason: 'That serial number already appears on more than one existing asset — too ambiguous to update automatically.' });
+          continue;
+        }
+        // A serial that names an EXISTING asset different from the one this row
+        // is about to create/update is a real conflict, not an update target.
+        if (serial) {
+          const serialOwner = await t.get("SELECT tag FROM assets WHERE serial <> '' AND lower(serial) = lower(?) AND id <> ?",
+            [serial, existing ? existing.id : '']);
+          if (serialOwner && (!existing || serialOwner.tag.toLowerCase() !== existing.tag.toLowerCase())) {
+            skipped++; note(rowNum, 'skipped', { field: 'serial', value: serial,
+              reason: `Serial number is already recorded on asset ${serialOwner.tag}.` });
+            continue;
+          }
+        }
 
         let site = str(rec.siteCode, 12);
         if (!siteCodes.has(site)) site = str(rec.defaultSite, 12);
         if (!siteCodes.has(site) && existing) site = existing.site_code;
-        if (!siteCodes.has(site) || !A.siteAllowed(req.user, site)) { skipped++; continue; }
-        if (existing && !A.siteAllowed(req.user, existing.site_code)) { skipped++; continue; }
+        if (!siteCodes.has(site)) {
+          skipped++; note(rowNum, 'skipped', { field: 'siteCode', value: str(rec.siteCode, 12), reason: 'Unrecognised site.' });
+          continue;
+        }
+        if (!A.siteAllowed(req.user, site) || (existing && !A.siteAllowed(req.user, existing.site_code))) {
+          skipped++; note(rowNum, 'skipped', { reason: 'You do not have access to that site.' });
+          continue;
+        }
         let dept = str(rec.dept, 80);
         if (dept && !deptNames.has(dept)) {
-          await t.run('INSERT INTO departments (id,name) VALUES (?,?)', [uid('d'), dept]);
+          await guarded(t, () => t.run('INSERT INTO departments (id,name) VALUES (?,?)', [uid('d'), dept]));
           deptNames.add(dept);
         }
         if (!dept) dept = 'Unassigned';
         const status = STATUSES.includes(str(rec.status, 40)) ? str(rec.status, 40) : 'In use';
         const price = parsePrice(rec.purchasePrice);
+
         if (existing) {
-          // A blank cell means "no value supplied", so it must not erase data.
           const cols = { serial:'serial', type:'asset_type', brand:'brand', model:'model', user:'user_name',
             dept:'dept', cpu:'cpu', ram:'ram', storage:'storage', os:'os', vendor:'vendor' };
           const sets = [], params = [];
@@ -527,34 +694,57 @@ function createRouter({ db, log }) {
           if (rec.status) { sets.push('status = ?'); params.push(status); }
           const incoming = pickCustom(rec.custom);
           if (Object.keys(incoming).length) {
-            // Merge, so an import that carries one column does not clear the rest.
             const merged = { ...jsonOr(existing.custom, {}), ...incoming };
             sets.push('custom = ?'); params.push(JSON.stringify(merged));
           }
           sets.push('version = version + 1', 'updated_at = ?');
           params.push(nowISO(), existing.id);
-          await t.run(`UPDATE assets SET ${sets.join(', ')} WHERE id = ?`, params);
+          const g = await guarded(t, () => t.run(`UPDATE assets SET ${sets.join(', ')} WHERE id = ?`, params));
+          if (!g.ok) {
+            skipped++; note(rowNum, 'skipped', { field: 'serial', value: serial, reason: 'Serial number collided with another asset during the update.' });
+            continue;
+          }
           updated++;
+          note(rowNum, 'updated', { tag: existing.tag });
         } else {
-          const finalTag = tag || await nextTagTx(t, site);
+          let finalTag = tag || await nextTagTx(t, site);
           const dupe = await t.get('SELECT id FROM assets WHERE lower(tag)=lower(?)', [finalTag]);
-          if (dupe) { skipped++; continue; }
-          await t.run(
+          if (dupe) {
+            skipped++; note(rowNum, 'skipped', { field: 'tag', value: finalTag, reason: `Asset tag ${finalTag} is already in use.` });
+            continue;
+          }
+          const doInsert = tg => t.run(
             `INSERT INTO assets (id,tag,serial,asset_type,brand,model,user_name,dept,site_code,cpu,ram,storage,os,
               status,vendor,purchase_price,purchase_year,warranty_end,custom,attachments,version,updated_at)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'[]',1,?)`,
-            [uid('a'), finalTag, str(rec.serial, 160), str(rec.type, 40) || 'Desktop', str(rec.brand, 80) || 'Unbranded',
+            [uid('a'), tg, str(rec.serial, 160), str(rec.type, 40) || 'Desktop', str(rec.brand, 80) || 'Unbranded',
              str(rec.model, 160), user || 'Unassigned', dept, site, str(rec.cpu, 160), str(rec.ram, 60),
              str(rec.storage, 80), str(rec.os, 80), status, str(rec.vendor, 120), price,
              Number(String(rec.purchaseYear || '').replace(/\D/g, '').slice(0, 4)) || null,
              str(rec.warrantyEnd, 40), JSON.stringify(pickCustom(rec.custom)), nowISO()]);
+
+          let g = await guarded(t, () => doInsert(finalTag));
+          if (!g.ok && !tag) {
+            finalTag = await nextTagTx(t, site);
+            g = await guarded(t, () => doInsert(finalTag));
+          }
+          if (!g.ok) {
+            const col = g.err ? duplicateField(g.err) : null;
+            skipped++;
+            note(rowNum, 'skipped', col === 'serial'
+              ? { field: 'serial', value: serial, reason: 'Serial number is already recorded on another asset.' }
+              : { field: 'tag', value: finalTag, reason: `Asset tag ${finalTag} is already in use.` });
+            continue;
+          }
           created++;
+          note(rowNum, 'created', { tag: finalTag });
         }
       }
       return { created, updated, skipped };
     });
-    await log(db, req.user.name, 'Imported', `${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
-    res.json(result);
+    await log(db, req.user.name, 'Imported',
+      `${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
+    res.json({ ...result, report });
   });
 
   async function nextTag(d, code) { return nextTagTx(d, code); }
@@ -575,7 +765,14 @@ function createRouter({ db, log }) {
       const dup = v.unique ? await db.get(`SELECT id FROM ${table} WHERE lower(${v.unique.col}) = lower(?)`, [v.unique.value]) : null;
       if (dup) return fail(res, 409, 'DUPLICATE', v.unique.message);
       const id = uid(v.prefix);
-      await db.run(v.insert.sql, [id, ...v.insert.params]);
+      // The pre-check above is advisory; two admins adding the same code at
+      // the same moment can both pass it. The INSERT is the real check.
+      try {
+        await db.run(v.insert.sql, [id, ...v.insert.params]);
+      } catch (err) {
+        if (isUniqueViolation(err)) return fail(res, 409, 'DUPLICATE', v.unique ? v.unique.message : 'That record already exists.');
+        throw err;
+      }
       await log(db, req.user.name, `${v.label} added`, v.unique ? v.unique.value : id);
       res.status(201).json({ item: shape(await db.get(`SELECT * FROM ${table} WHERE id = ?`, [id])) });
     });
@@ -670,8 +867,13 @@ function createRouter({ db, log }) {
     if (dup) return fail(res, 409, 'DUPLICATE', 'A field with that name already exists.');
     const options = Array.isArray(req.body.options) ? req.body.options.map(o => str(o, 80)).filter(Boolean).slice(0, 50) : [];
     const id = uid('f');
-    await db.run('INSERT INTO custom_fields (id,field_key,label,field_type,options,required,in_table) VALUES (?,?,?,?,?,?,?)',
-      [id, key, label, type, JSON.stringify(options), req.body.required ? 1 : 0, req.body.inTable ? 1 : 0]);
+    try {
+      await db.run('INSERT INTO custom_fields (id,field_key,label,field_type,options,required,in_table) VALUES (?,?,?,?,?,?,?)',
+        [id, key, label, type, JSON.stringify(options), req.body.required ? 1 : 0, req.body.inTable ? 1 : 0]);
+    } catch (err) {
+      if (isUniqueViolation(err)) return fail(res, 409, 'DUPLICATE', 'A field with that name already exists.');
+      throw err;
+    }
     await log(db, req.user.name, 'Field added', label);
     res.status(201).json({ field: { id, key, label, type, options, required: !!req.body.required, inTable: !!req.body.inTable } });
   });
@@ -713,10 +915,15 @@ function createRouter({ db, log }) {
     const { hash, salt } = A.hashPassword(password);
     const id = uid('u');
     const sites = Array.isArray(req.body.sites) ? req.body.sites.map(s => str(s, 12)).slice(0, 50) : [];
-    await db.run(
-      `INSERT INTO users (id,email,name,role,pw_hash,pw_salt,active,sites,must_change,created_at)
-       VALUES (?,?,?,?,?,?,1,?,1,?)`,
-      [id, email, name, role, hash, salt, JSON.stringify(sites), nowISO()]);
+    try {
+      await db.run(
+        `INSERT INTO users (id,email,name,role,pw_hash,pw_salt,active,sites,must_change,created_at)
+         VALUES (?,?,?,?,?,?,1,?,1,?)`,
+        [id, email, name, role, hash, salt, JSON.stringify(sites), nowISO()]);
+    } catch (err) {
+      if (isUniqueViolation(err)) return fail(res, 409, 'DUPLICATE', 'That email already has an account.');
+      throw err;
+    }
     await log(db, req.user.name, 'User created', `${name} as ${role}`);
     res.status(201).json({ user: A.shapeUser(await db.get('SELECT * FROM users WHERE id=?', [id])) });
   });

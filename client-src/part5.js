@@ -139,13 +139,50 @@ function vImport(v){
       const r=await API.importAssets(payload);
       const b=await API.bootstrap();
       S.assets=b.assets;S.depts=b.depts;
-      IMPORTED=null;VIEW='assets';F={...F,q:'',page:1};render();
-      toast(`${r.created} added, ${r.updated} updated${r.skipped?`, ${r.skipped} skipped`:''}`);
+      IMPORT_RESULT=r;IMPORTED=null;VIEW='importResult';render();
     }catch(err){
       btn.disabled=false;btn.textContent='Import '+rows.length+' rows';
       if(!handleAuthLoss(err))toast(err.message);
     }
   }
+}
+
+/**
+ * Row-by-row account of the last import: what happened to each line and,
+ * for anything skipped, exactly why — so re-uploading the same sheet next
+ * quarter is something the person can trust rather than a black box.
+ */
+let IMPORT_RESULT=null;
+function vImportResult(v){
+  if(!IMPORT_RESULT){VIEW='import';render();return;}
+  const r=IMPORT_RESULT;
+  const rows=r.report||[];
+  const pillFor=a=>a==='created'?'use':a==='updated'?'spare':'rep';
+  const labelFor=a=>a==='created'?'Added':a==='updated'?'Updated':'Skipped';
+  v.innerHTML=`
+  <div class="stats" style="margin-bottom:14px">
+    <div class="stat"><b>${r.created}</b><span>New assets added</span></div>
+    <div class="stat"><b>${r.updated}</b><span>Existing assets updated</span></div>
+    <div class="stat ${r.skipped?'alert':''}"><b>${r.skipped}</b><span>Rows skipped</span></div>
+  </div>
+  <div class="card">
+    <header><h2>Row by row</h2>
+      <span style="margin-left:auto;color:var(--muted);font-size:12.5px">Matched by asset tag first, then by serial number</span></header>
+    <div class="tw"><table><thead><tr><th>Row</th><th>Result</th><th>Asset</th><th>Detail</th></tr></thead>
+      <tbody>${rows.length?rows.map(row=>`<tr>
+        <td class="mono">${row.row}</td>
+        <td><span class="pill ${pillFor(row.action)}">${labelFor(row.action)}</span></td>
+        <td class="mono">${row.tag?esc(row.tag):'\u2014'}</td>
+        <td>${row.reason?esc(row.reason):(row.action==='created'?'New asset created.':'Matched an existing asset and updated it.')}</td>
+      </tr>`).join(''):`<tr><td colspan="4"><div class="empty"><b>No row detail available</b></div></td></tr>`}
+      </tbody></table></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn p" id="irassets">View asset register</button>
+    <button class="btn" id="iragain">Import another file</button>
+  </div>`;
+  $('#irassets').onclick=()=>{VIEW='assets';F={...F,q:'',page:1};render();};
+  $('#iragain').onclick=()=>{IMPORT_RESULT=null;VIEW='import';render();};
 }
 
 /* ---------- reports ---------- */

@@ -189,3 +189,100 @@ test('import skips rows for sites that do not exist', async () => {
   assert.equal(r.body.skipped, 2);
   await c.close();
 });
+
+/* ---- races that only show up under real concurrent writers ---- */
+
+test('concurrent sites with the same code: exactly one wins, the rest get 409, none crash', async () => {
+  const { app, c } = await setup();
+  const sessions = [];
+  for (let i = 0; i < 6; i++) {
+    const s = client(app);
+    await loginAs(s, ADMIN.email, ADMIN.password);
+    sessions.push(s);
+  }
+  const results = await Promise.all(sessions.map(s => s.post('/api/sites', { name: 'Race Site', code: 'RZ' })));
+  const created = results.filter(r => r.status === 201);
+  const dupes = results.filter(r => r.status === 409);
+  assert.equal(created.length, 1, `exactly one site should be created, got ${created.length}`);
+  assert.equal(dupes.length, 5);
+  assert.ok(results.every(r => r.status === 201 || r.status === 409), 'no request returned a raw error');
+  await Promise.all(sessions.map(s => s.close())); await c.close();
+});
+
+test('concurrent users with the same email: exactly one account, no raw errors', async () => {
+  const { app, c } = await setup();
+  const sessions = [];
+  for (let i = 0; i < 6; i++) {
+    const s = client(app);
+    await loginAs(s, ADMIN.email, ADMIN.password);
+    sessions.push(s);
+  }
+  const results = await Promise.all(sessions.map(s =>
+    s.post('/api/users', { name: 'Race', email: 'race@example.com', role: 'Viewer', password: 'a-fine-password-1' })));
+  assert.equal(results.filter(r => r.status === 201).length, 1);
+  assert.equal(results.filter(r => r.status === 409).length, 5);
+  assert.ok(results.every(r => [201, 409].includes(r.status)));
+  await Promise.all(sessions.map(s => s.close())); await c.close();
+});
+
+test('an explicit tag under concurrent creation still resolves cleanly', async () => {
+  const { app, c } = await setup();
+  const sessions = [];
+  for (let i = 0; i < 5; i++) {
+    const s = client(app);
+    await loginAs(s, ADMIN.email, ADMIN.password);
+    sessions.push(s);
+  }
+  const results = await Promise.all(sessions.map(s =>
+    s.post('/api/assets', { user: 'X', siteCode: 'HO', dept: 'IT', tag: 'HO-PC-999' })));
+  assert.equal(results.filter(r => r.status === 201).length, 1, 'exactly one gets the explicit tag');
+  assert.equal(results.filter(r => r.status === 409).length, 4);
+  await Promise.all(sessions.map(s => s.close())); await c.close();
+});
+
+test('an import running alongside a live asset-creation burst does not corrupt either', async () => {
+  const { app, c } = await setup();
+  const importer = client(app);
+  await loginAs(importer, ADMIN.email, ADMIN.password);
+  const rows = Array.from({ length: 15 }, (_, i) => ({ user: 'Bulk ' + i, siteCode: 'HO', dept: 'IT' }));
+
+  const creators = [];
+  for (let i = 0; i < 5; i++) {
+    const s = client(app);
+    await loginAs(s, ADMIN.email, ADMIN.password);
+    creators.push(s);
+  }
+
+  const [importResult, ...createResults] = await Promise.all([
+    importer.post('/api/assets/import', { rows }),
+    ...creators.map((s, i) => s.post('/api/assets', { user: 'Live ' + i, siteCode: 'HO', dept: 'IT' }))
+  ]);
+
+  assert.equal(importResult.status, 200);
+  assert.equal(importResult.body.created, 15, 'the whole import batch landed, despite concurrent tag allocation');
+  assert.equal(createResults.filter(r => r.status === 201).length, 5, 'every live create also succeeded');
+
+  const boot = (await c.get('/api/bootstrap')).body;
+  const tags = boot.assets.map(a => a.tag);
+  assert.equal(new Set(tags).size, tags.length, 'no duplicate tags anywhere across both paths');
+  assert.equal(boot.assets.length, 20);
+  await Promise.all(creators.map(s => s.close())); await importer.close(); await c.close();
+});
+
+test('two imports at once, both creating rows for the same new department, do not fail', async () => {
+  const { app, c } = await setup();
+  const a = client(app), b = client(app);
+  await loginAs(a, ADMIN.email, ADMIN.password);
+  await loginAs(b, ADMIN.email, ADMIN.password);
+  const rowsA = [{ user: 'A1', siteCode: 'HO', dept: 'Brand New Dept' }];
+  const rowsB = [{ user: 'B1', siteCode: 'HO', dept: 'Brand New Dept' }];
+  const [ra, rb] = await Promise.all([
+    a.post('/api/assets/import', { rows: rowsA }),
+    b.post('/api/assets/import', { rows: rowsB })
+  ]);
+  assert.equal(ra.status, 200); assert.equal(rb.status, 200);
+  assert.equal(ra.body.created, 1); assert.equal(rb.body.created, 1);
+  const boot = (await c.get('/api/bootstrap')).body;
+  assert.equal(boot.depts.filter(d => d.name === 'Brand New Dept').length, 1, 'the department exists exactly once');
+  await a.close(); await b.close(); await c.close();
+});
