@@ -178,15 +178,21 @@ test('import creates and updates without erasing blanks', async () => {
   await c.close();
 });
 
-test('import skips rows for sites that do not exist', async () => {
+test('import creates a site for an unrecognised name instead of skipping it', async () => {
+  // Superseded by tests/import-sites.test.js, which covers this in depth —
+  // kept here as a one-line regression marker on the exact case this test
+  // used to assert the OLD (wrong) behaviour for: an unrecognised site name
+  // used to be silently dropped. It now becomes a new site.
   const { c } = await setup();
   const r = await c.post('/api/assets/import', { rows: [
     { user: 'Good', siteCode: 'HO' },
-    { user: 'Bad', siteCode: 'NOWHERE' },
+    { user: 'Also Good', siteCode: 'NOWHERE' },
     { user: '', tag: '' }
   ]});
-  assert.equal(r.body.created, 1);
-  assert.equal(r.body.skipped, 2);
+  assert.equal(r.body.created, 2, JSON.stringify(r.body));
+  assert.equal(r.body.skipped, 1, 'only the row with neither a tag nor a user is unresolvable');
+  const boot = (await c.get('/api/bootstrap')).body;
+  assert.ok(boot.sites.some(s => s.name === 'NOWHERE'));
   await c.close();
 });
 

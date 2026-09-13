@@ -549,8 +549,53 @@ function createRouter({ db, log }) {
     const rows = Array.isArray(req.body && req.body.rows) ? req.body.rows.slice(0, 5000) : [];
     if (!rows.length) return fail(res, 400, 'NO_ROWS', 'Nothing to import.');
     const m = await masters();
+    // Keyed both ways: a real-world file as often gives a full site NAME
+    // ("Dosti Greate County") as it does a short code ("HO"), so both must
+    // resolve to the same site rather than one of them silently failing.
     const siteCodes = new Set(m.sites.map(s => s.code));
+    const siteByCode = new Map(m.sites.map(s => [s.code.toLowerCase(), s.code]));
+    const siteByName = new Map(m.sites.map(s => [s.name.toLowerCase(), s.code]));
+    const usedSiteCodes = new Set(m.sites.map(s => s.code.toUpperCase()));
     const deptNames = new Set(m.depts.map(d => d.name));
+
+    /**
+     * Resolves a raw site value to a site code, creating a new site if
+     * nothing matches — mirroring how an unrecognised department is already
+     * handled below. Without this, any import from a file whose site names
+     * don't already exist in this exact register (the normal case for a
+     * fresh deployment, or any file from outside this app) has every single
+     * row skipped, which reads as "only one row imported" whenever exactly
+     * one row happens to match a site created some other way.
+     */
+    async function resolveSite(t, raw) {
+      const value = str(raw, 120);
+      if (!value) return null;
+      const key = value.toLowerCase();
+      if (siteByCode.has(key)) return siteByCode.get(key);
+      if (siteByName.has(key)) return siteByName.get(key);
+
+      const base = value.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'STE';
+      // Appending the counter WITHOUT re-truncating: slicing back to 3 chars
+      // after appending a two-digit suffix collapsed every code from n=10
+      // onward to the same 3 characters, which looped forever the moment a
+      // prefix collided ten times (very reachable on a real file where many
+      // distinct site names share the same first three letters).
+      let code = base, n = 1;
+      while (usedSiteCodes.has(code) && n <= 9999) { code = `${base}${++n}`; }
+      usedSiteCodes.add(code);
+
+      const g = await guarded(t, () => t.run(
+        'INSERT INTO sites (id,code,name,location,company_id) VALUES (?,?,?,?,?)',
+        [uid('s'), code, value, '', '']));
+      if (!g.ok) {
+        // Someone else created a site with this exact code in the same instant;
+        // the safe move is to look it up again rather than guess.
+        const row = await t.get('SELECT code FROM sites WHERE lower(code) = lower(?)', [code]);
+        if (row) code = row.code;
+      }
+      siteCodes.add(code); siteByCode.set(code.toLowerCase(), code); siteByName.set(key, code);
+      return code;
+    }
     const fieldDefs = await db.all('SELECT * FROM custom_fields');
     const fieldKeys = new Set(fieldDefs.map(f => f.field_key));
     const pickCustom = raw => {
@@ -662,11 +707,13 @@ function createRouter({ db, log }) {
           }
         }
 
-        let site = str(rec.siteCode, 12);
-        if (!siteCodes.has(site)) site = str(rec.defaultSite, 12);
-        if (!siteCodes.has(site) && existing) site = existing.site_code;
-        if (!siteCodes.has(site)) {
-          skipped++; note(rowNum, 'skipped', { field: 'siteCode', value: str(rec.siteCode, 12), reason: 'Unrecognised site.' });
+        let site = await resolveSite(t, rec.siteCode);
+        if (!site) site = await resolveSite(t, rec.defaultSite);
+        if (!site && existing) site = existing.site_code;
+        if (!site) {
+          // Only reachable when the row gives no site at all and no default
+          // was chosen either — there is nothing to create a site FROM.
+          skipped++; note(rowNum, 'skipped', { field: 'siteCode', value: str(rec.siteCode, 12), reason: 'No site given and no default site selected.' });
           continue;
         }
         if (!A.siteAllowed(req.user, site) || (existing && !A.siteAllowed(req.user, existing.site_code))) {
