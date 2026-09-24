@@ -140,3 +140,33 @@ test('the real uploaded file imports fully: hundreds of rows, dozens of new site
   assert.ok(boot.sites.length > 20, 'many distinct real site names were auto-created');
   await c.close();
 });
+
+/* ---- cross-request concurrency: separate imports, not rows within one import ---- */
+
+test('many SEPARATE concurrent import requests to the same brand-new site do not collide on the auto-generated tag', async () => {
+  // This is a different race than the one above: each request is its own
+  // transaction, so none can see another's uncommitted tag allocation. A
+  // single retry (the original fix) was not enough — concurrent retries kept
+  // recomputing the identical "next" candidate and colliding again. Only
+  // meaningful against real Postgres, where transactions genuinely overlap;
+  // SQLite serializes writers and would hide this.
+  if (!process.env.TEST_DATABASE_URL) return;
+  const { app, c } = await asAdmin();
+  const sessions = [];
+  for (let i = 0; i < 15; i++) {
+    const s = client(app);
+    await loginAs(s, ADMIN.email, ADMIN.password);
+    sessions.push(s);
+  }
+  const results = await Promise.all(sessions.map((s, i) =>
+    s.post('/api/assets/import', { rows: [{ user: 'Racer ' + i, siteCode: 'Concurrent New Site', dept: 'IT' }] })
+  ));
+  const created = results.filter(r => r.body.created === 1).length;
+  assert.ok(created >= 13, `expected most of 15 concurrent imports to succeed, got ${created}`);
+  const boot = (await c.get('/api/bootstrap')).body;
+  const sites = boot.sites.filter(s => s.name === 'Concurrent New Site');
+  assert.equal(sites.length, 1, 'exactly one site record, never duplicated');
+  const tags = boot.assets.map(a => a.tag);
+  assert.equal(new Set(tags).size, tags.length, 'no duplicate tags, whatever the exact success count');
+  await Promise.all(sessions.map(s => s.close())); await c.close();
+});

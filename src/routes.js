@@ -770,9 +770,21 @@ function createRouter({ db, log }) {
              Number(String(rec.purchaseYear || '').replace(/\D/g, '').slice(0, 4)) || null,
              str(rec.warrantyEnd, 40), JSON.stringify(pickCustom(rec.custom)), nowISO()]);
 
+          // A single retry was not enough under real multi-request concurrency:
+          // several simultaneous imports racing to create the same brand-new
+          // site each compute their own "next" tag before any of them commits,
+          // so more than one collision in a row is a real, observed outcome —
+          // not a rare edge case. Loop like the single-asset-create endpoint
+          // does, rather than retrying exactly once.
           let g = await guarded(t, () => doInsert(finalTag));
-          if (!g.ok && !tag) {
-            finalTag = await nextTagTx(t, site);
+          let tagAttempts = 0;
+          while (!g.ok && !tag && duplicateField(g.err) === 'tag' && tagAttempts < 8) {
+            tagAttempts++;
+            // Widening spread each attempt: small at first (keeps tags tidy
+            // under light contention), wide enough by the last few attempts to
+            // make repeat collisions statistically very unlikely even under
+            // heavy concurrent writers to the same brand-new site.
+            finalTag = await nextTagTx(t, site, tagAttempts * 15);
             g = await guarded(t, () => doInsert(finalTag));
           }
           if (!g.ok) {
@@ -795,10 +807,20 @@ function createRouter({ db, log }) {
   });
 
   async function nextTag(d, code) { return nextTagTx(d, code); }
-  async function nextTagTx(t, code) {
+  /**
+   * @param {number} spread On the first attempt, 0 — tags stay tidy and
+   *   sequential for the common case of one writer. On a retry after a
+   *   collision, callers pass a growing spread so concurrent retriers land on
+   *   DIFFERENT candidate numbers instead of every one of them recomputing
+   *   "count + 1" from the same not-yet-committed state and colliding again on
+   *   the exact same number — which is what a plain retry with no spread does,
+   *   and observably still fails under double-digit concurrent writers.
+   */
+  async function nextTagTx(t, code, spread = 0) {
     const rows = await t.all('SELECT tag FROM assets WHERE site_code = ?', [code]);
     const used = new Set(rows.map(r => String(r.tag).toUpperCase()));
-    let i = rows.length + 1, tag;
+    const jitter = spread ? Math.floor(Math.random() * spread) : 0;
+    let i = rows.length + 1 + jitter, tag;
     do { tag = `${code}-PC-${String(i).padStart(3, '0')}`; i++; } while (used.has(tag.toUpperCase()));
     return tag;
   }
