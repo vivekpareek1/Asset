@@ -66,10 +66,27 @@ function themeToCssVars(t){return{
    Section 2 — src/admin/applyTheme.js
    ========================================================================== */
 const WEBFONT_ID='app-theme-webfont';
+/**
+ * Dark mode and the admin's live theme both want to control --app-bg/--app-text
+ * on <html>. applyTheme() sets them as INLINE styles (so the admin's colour
+ * picker updates instantly), and an inline style beats any stylesheet rule --
+ * including the [data-mode="dark"] selector dark mode relies on. Without this,
+ * every call to applyTheme() (boot, saving a theme change) would silently
+ * erase dark mode's override and the whole app would go unreadable-on-dark.
+ * A scoped preview node (the swatch panel on the Theme settings page) is
+ * exempt on purpose: it must keep showing the admin's actual light-mode
+ * colours regardless of the viewer's personal dark-mode preference.
+ */
 function applyTheme(theme,target=document.documentElement){
   const vars=themeToCssVars(theme);
   for(const [n,v] of Object.entries(vars))target.style.setProperty(n,v);
-  if(target===document.documentElement)ensureWebfont(theme.fontFamily);
+  if(target===document.documentElement){
+    ensureWebfont(theme.fontFamily);
+    if(document.documentElement.getAttribute('data-mode')==='dark'){
+      target.style.setProperty('--app-bg','#0F1B27');
+      target.style.setProperty('--app-text','#E7ECF1');
+    }
+  }
 }
 function ensureWebfont(id){
   const font=FONT_FAMILIES.find(f=>f.id===id);

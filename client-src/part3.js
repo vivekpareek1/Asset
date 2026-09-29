@@ -19,12 +19,13 @@ function renderShell(){
   const nav=NAV.filter(n=>n.g||(!n.admin||can('admin'))&&(!n.edit||can('edit'))).map(n=>{
     if(n.g)return `<div class="grp">${n.t||n.g}</div>`;
     const c=n.ct?`<span class="ct">${n.ct()}</span>`:'';
-    return `<button data-nav="${n.v}" class="${VIEW===n.v?'on':''}">${n.t}${c}</button>`;
+    const ic={'dash': '&#9673;', 'assets': '&#9638;', 'add': '&#65291;', 'import': '&#8593;', 'reports': '&#9776;', 'sites': '&#8962;', 'depts': '&#128101;', 'fields': '&#9881;', 'users': '&#128100;', 'theme': '&#127912;', 'uploadtests': '&#128268;', 'log': '&#128337;'}[n.v]||'&#8226;';
+    return `<button data-nav="${n.v}" class="${VIEW===n.v?'on':''}"><span class="ic" aria-hidden="true">${ic}</span>${n.t}${c}</button>`;
   }).join('');
   document.body.innerHTML=`
   <div class="shell">
     <aside class="rail" id="rail">
-      <div class="brand">${S.logo?`<img src="${logoSrc(S.logo)}" alt="Company logo">`:''}<b>AssetOps</b><span>IT asset register</span></div>
+      <div class="brand">${S.logo?`<img class="mark" src="${logoSrc(S.logo)}" alt="Company logo">`:'<span class="mark">A</span>'}<span><b>AssetOps</b><br><span style="font-size:11px;font-weight:400">IT asset register</span></span></div>
       <nav class="nav">${nav}</nav>
       <div class="railfoot">${S.assets.length} assets · ${S.sites.length} sites</div>
     </aside>
@@ -33,6 +34,7 @@ function renderShell(){
         <button class="btn sm noprint" id="menu" style="display:none">Menu</button>
         <h1 id="ttl"></h1>
         <div class="who noprint">
+          <button type="button" class="modetoggle" id="modetoggle" aria-label="Toggle dark mode"></button>
           <span>${esc(ME.name)} · ${esc(ME.role)}</span>
           <button class="btn sm" id="security">Security</button>
           <button class="btn sm" id="signout">Sign out</button>
@@ -44,14 +46,16 @@ function renderShell(){
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{VIEW=b.dataset.nav;SEL.clear();F.page=1;render();});
   $('#signout').onclick=signOut;
   $('#security').onclick=()=>{PWOPEN=true;render();};
-  if(innerWidth<=820){$('#menu').style.display='';$('#menu').onclick=()=>$('#rail').classList.toggle('open');}
+  bindModeToggle();
+  if(innerWidth<=820){$('#menu').style.display='';$('#menu').onclick=e=>{e.stopPropagation();$('#rail').classList.toggle('open');};
+    document.querySelector('.main').addEventListener('click',()=>$('#rail').classList.remove('open'));}
 }
-const TITLES={dash:'Fleet overview',assets:'Asset register',add:'Add asset',import:'Import data',importResult:'Import results',reports:'Reports',sites:'Companies & sites',depts:'Departments',fields:'Custom fields',users:'Portal users',theme:'Theme settings',uploadtests:'Upload tests',log:'Activity log'};
+const TITLES={dash:'Fleet overview',assets:'Asset register',add:'Add asset',import:'Import data',importResult:'Import results',reports:'Reports',sites:'Companies & sites',depts:'Departments',fields:'Custom fields',users:'Portal users',theme:'Theme settings',uploadtests:'Upload tests',log:'Activity log',qrlabels:'QR labels'};
 function render(){
   renderShell();
   $('#ttl').textContent=TITLES[VIEW]||'';
   const v=$('#view');
-  ({dash:vDash,assets:vAssets,add:vAdd,import:vImport,importResult:vImportResult,reports:vReports,sites:vSites,depts:vDepts,fields:vFields,users:vUsers,theme:vTheme,uploadtests:vUploadTests,log:vLog}[VIEW]||vDash)(v);
+  ({dash:vDash,assets:vAssets,add:vAdd,import:vImport,importResult:vImportResult,reports:vReports,sites:vSites,depts:vDepts,fields:vFields,users:vUsers,theme:vTheme,uploadtests:vUploadTests,log:vLog,qrlabels:vQrLabels}[VIEW]||vDash)(v);
   if(DRAWER)openDrawer(DRAWER,true);
   if(TRESET)document.body.insertAdjacentHTML('beforeend',resetModal());
   bindResetModal();
@@ -91,7 +95,7 @@ function vDash(v){
     <div class="stats">
       <div class="stat"><b>${A.length}</b><span>Assets in register</span></div>
       <div class="stat"><b>${Object.keys(bySite).length}</b><span>Sites covered</span></div>
-      <div class="stat ${byStatus['Replace due']?'alert':''}"><b>${byStatus['Replace due']||0}</b><span>Flagged for replacement</span></div>
+      <div class="stat ${byStatus['Replace due']?'attn':''}"><b>${byStatus['Replace due']||0}</b><span>Flagged for replacement</span></div>
       <div class="stat"><b>${lowRam}</b><span>Running on 4 GB or less</span></div>
       <div class="stat"><b>${outWarr}</b><span>Out of warranty</span></div>
       <div class="stat"><b style="font-size:calc(var(--app-font-size) * 1.5)">${money(spend)}</b><span>Recorded spend${priced.length<A.length?` \u00b7 ${A.length-priced.length} without a price`:''}</span></div>
@@ -112,7 +116,7 @@ function vDash(v){
       </div>
     </div>
 
-    <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="grid two-col">
       <div class="card"><header><h2>Assets by site</h2></header><div class="in"><div class="bars">
         ${siteRows.map(([c,n])=>`<div class="bar"><span class="trunc" title="${esc(siteName(c))}">${esc(siteName(c))}</span><span class="t" style="width:${n/maxSite*100}%"></span><span class="n">${n}</span></div>`).join('')}
       </div></div></div>
@@ -127,9 +131,16 @@ function vDash(v){
       ${vendorRows.map(([v,amt])=>`<div class="bar"><span class="trunc" title="${esc(v)}">${esc(v)}</span><span class="t" style="width:${amt/maxVendor*100}%"></span><span class="n">${money(amt)}</span></div>`).join('')}
     </div></div></div>`:`<div class="note">No purchase prices recorded yet. Add a vendor and price on any asset, or map the columns on the Import data page to fill them in bulk \u2014 the spend reports appear once there is something to report.</div>`}
 
-    <div class="card"><header><h2>Status breakdown</h2></header><div class="in"><div class="row">
-      ${STATUSES.map(s=>`<button class="btn" data-jump="${s}"><span class="pill ${statusCls(s)}">${s}</span> <b class="mono">${byStatus[s]||0}</b></button>`).join('')}
-    </div></div></div>
+    <div class="card"><header><h2>Status breakdown</h2></header><div class="in">
+      <div class="donut-wrap">
+        ${donutSVG(STATUSES.map(s=>({value:byStatus[s]||0,color:STATUS_COLOR[s]})))}
+        <div class="donut-legend">
+          ${STATUSES.map(s=>`<button class="btn sm" data-jump="${s}" style="justify-content:flex-start;border:0;background:none;padding:3px 4px">
+            <span class="row" style="gap:8px"><i style="background:${STATUS_COLOR[s]};width:10px;height:10px;border-radius:2px;display:inline-block"></i>
+            ${s} <b class="mono" style="margin-left:auto;padding-left:14px">${byStatus[s]||0}</b></span></button>`).join('')}
+        </div>
+      </div>
+    </div></div>
   </div>`;
   v.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{F={...F,status:b.dataset.jump,page:1};VIEW='assets';render();});
 }
@@ -146,7 +157,7 @@ function cols(){
     {k:'ram',t:'Memory',r:a=>esc(a.ram)},
     {k:'storage',t:'Storage',r:a=>`<span class="trunc" title="${esc(a.storage)}">${esc(a.storage)}</span>`},
     {k:'status',t:'Status',r:a=>`<span class="pill ${statusCls(a.status)}">${esc(a.status)}</span>`},
-    {k:'vendor',t:'Vendor',r:a=>a.vendor?esc(a.vendor):'<span style="color:var(--muted)">Not recorded</span>'},
+    {k:'vendor',t:'Vendor',r:a=>a.vendor?esc(a.vendor):'<span class="dash" title="Not recorded">\u2014</span>'},
     {k:'purchasePrice',t:'Purchase price',r:a=>`<span class="mono" style="${a.purchasePrice==null?'color:var(--muted)':''}">${money(a.purchasePrice)}</span>`}
   ];
   S.fields.filter(f=>f.inTable).forEach(f=>base.push({k:'cf_'+f.key,t:f.label,r:a=>esc((a.custom||{})[f.key]||'—')}));
@@ -166,7 +177,7 @@ function vAssets(v){
   v.innerHTML=`
   <div class="card">
     <header class="noprint" style="flex-wrap:wrap">
-      <input type="text" id="q" placeholder="Search tag, user, model, processor, serial" value="${esc(F.q)}" style="width:290px">
+      <input type="text" id="q" placeholder="Search tag, user, model, processor, serial" value="${esc(F.q)}" class="qbox">
       <select id="fsite" style="width:auto"><option value="">All sites</option>${S.sites.filter(s=>A.some(a=>a.siteCode===s.code)).map(s=>`<option value="${s.code}">${esc(s.name)}</option>`).join('')}</select>
       <select id="fdept" style="width:auto"><option value="">All departments</option>${opts([...new Set(A.map(a=>a.dept))].sort(),F.dept)}</select>
       <select id="fstatus" style="width:auto"><option value="">Any status</option>${opts(STATUSES,F.status)}</select>
@@ -176,6 +187,7 @@ function vAssets(v){
       <button class="btn" id="clear">Clear</button>
       <span style="margin-left:auto;color:var(--muted);font-size:12.5px">${list.length} of ${A.length}${(()=>{const p=list.filter(a=>a.purchasePrice!=null);return p.length?` \u00b7 ${money(totalValue(p))} across ${p.length} priced`:'';})()}</span>
       <button class="btn" id="exp">Export CSV</button>
+      <button class="btn" id="expxl">Export Excel</button>
     </header>
     <div class="tw">
       <table id="tbl">
@@ -206,6 +218,7 @@ function vAssets(v){
   ['site','dept','status','type','brand','vendor'].forEach(k=>{$('#f'+k).onchange=e=>{F[k]=e.target.value;F.page=1;rerender();};});
   $('#clear').onclick=()=>{F={...F,q:'',site:'',dept:'',status:'',type:'',brand:'',vendor:'',page:1};rerender();};
   $('#exp').onclick=()=>{exportAssets(list,'assets-filtered.csv');toast(list.length+' rows exported');};
+  $('#expxl').onclick=()=>exportAssetsXlsx(list,'assets-filtered.xlsx');
   $('#prev').onclick=()=>{F.page--;rerender();};
   $('#next').onclick=()=>{F.page++;rerender();};
   v.querySelectorAll('th.s').forEach(th=>th.onclick=()=>{
@@ -257,7 +270,9 @@ function drawBulk(){
     <input type="text" id="bvend" placeholder="Set vendor…" style="width:150px;background:#22333F;border-color:#2E4150;color:#fff" list="vendorlist">
     <datalist id="vendorlist">${[...new Set(S.assets.map(a=>a.vendor).filter(Boolean))].sort().map(v=>`<option value="${esc(v)}">`).join('')}</datalist>
     <button class="btn sm" id="bvendgo">Apply vendor</button>`:''}
-    <button class="btn sm" id="bexp">Export selected</button>
+    <button class="btn sm" id="bexp">Export CSV</button>
+    <button class="btn sm" id="bexpxl">Export Excel</button>
+    <button class="btn sm" id="bqr">Print QR labels</button>
     ${can('admin')?`<button class="btn sm d" id="bdel" style="border-color:#7A3524;color:#F0B9AB">Delete</button>`:''}
     <button class="btn sm" id="bclr" style="margin-left:auto">Clear selection</button>
   </div>`;
@@ -284,9 +299,11 @@ function drawBulk(){
     bv.onkeydown=e=>{if(e.key==='Enter')applyVendor();};
   }
   document.getElementById('bexp').onclick=()=>{exportAssets(S.assets.filter(a=>SEL.has(a.id)),'assets-selected.csv');toast(ids.length+' rows exported');};
+  document.getElementById('bexpxl').onclick=()=>exportAssetsXlsx(S.assets.filter(a=>SEL.has(a.id)),'assets-selected.xlsx');
+  document.getElementById('bqr').onclick=()=>{QR_IDS=[...ids];VIEW='qrlabels';render();};
   const bd=document.getElementById('bdel');
   if(bd)bd.onclick=async()=>{
-    if(!confirm('Delete '+ids.length+' assets from the register? This cannot be undone.'))return;
+    if(!await confirmDialog({title:'Delete '+ids.length+(ids.length===1?' asset?':' assets?'),message:'They will be removed from the register for good. This cannot be undone.',confirmLabel:'Delete',danger:true}))return;
     let done=0,failed=0;
     for(const id of ids){
       try{ await API.deleteAsset(id); done++; }
@@ -393,4 +410,58 @@ function bindPasswordModal(){
       ME.mfaEnabled=false; MFASETUP=null; MFACODES=null; render(); toast('Two-step sign-in turned off.');
     }catch(e){ if(handleAuthLoss(e))return; off.disabled=false; err(e.message); }
   };
+}
+
+
+/* ---------- QR asset labels ---------- */
+let QR_IDS=[];
+/**
+ * Loads kazuhikoarase's qrcode-generator on demand — same lazy-CDN pattern
+ * the Excel import already uses, so a feature nobody opens costs nothing on
+ * every other page.
+ */
+function loadQR(cb){
+  if(window.qrcode)return cb();
+  // Self-hosted rather than pulled from a CDN: a corporate outbound proxy that
+  // allows this app's own origin but blocks a random CDN domain is a realistic
+  // scenario for exactly the kind of internal IT tool this is, and self-hosting
+  // removes that failure mode entirely rather than hoping the CDN is reachable.
+  const base=document.createElement('script');
+  base.src='/vendor/qrcode.js';
+  base.onload=()=>{
+    const utf8=document.createElement('script');   // adds multi-byte support; harmless for plain ASCII tags
+    utf8.src='/vendor/qrcode-utf8.js';
+    utf8.onload=cb; utf8.onerror=cb;                // base library alone is fully usable if this one fails
+    document.head.appendChild(utf8);
+  };
+  base.onerror=()=>toast('QR code generator failed to load.');
+  document.head.appendChild(base);
+}
+function qrSvg(text,size=112){
+  const q=qrcode(0,'M'); // type 0 = auto-sized to fit the data
+  q.addData(text); q.make();
+  return q.createSvgTag({cellSize:size/q.getModuleCount(),margin:0});
+}
+function vQrLabels(v){
+  const assets=S.assets.filter(a=>QR_IDS.includes(a.id));
+  if(!assets.length){VIEW='assets';render();return;}
+  v.innerHTML=`
+  <div class="row noprint" style="margin-bottom:14px">
+    <button class="btn p" id="qrprint">Print</button>
+    <button class="btn" id="qrback">Back to assets</button>
+    <span style="color:var(--muted);font-size:12.5px;margin-left:6px">${assets.length} labels — asset tag encoded as plain text, four to a row when printed</span>
+  </div>
+  <div class="qrsheet" id="qrsheet">${assets.map(a=>`<div class="qrlabel">
+    <div class="qr" data-tag="${esc(a.tag)}"></div>
+    <div class="tag">${esc(a.tag)}</div>
+    <div class="who">${esc(a.user||'Unassigned')}</div>
+  </div>`).join('')}</div>`;
+  $('#qrback').onclick=()=>{VIEW='assets';render();};
+  $('#qrprint').onclick=()=>window.print();
+  loadQR(()=>{
+    document.querySelectorAll('#qrsheet .qr').forEach(el=>{
+      try{ el.innerHTML=qrSvg(el.dataset.tag); }
+      catch(e){ el.textContent='(could not render)'; }
+    });
+  });
 }

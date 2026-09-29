@@ -16,7 +16,7 @@ function openDrawer(id,keep){
   <div class="scrim" id="scrim"></div>
   <aside class="drawer" role="dialog" aria-label="Asset detail">
     <header>
-      <div><h2 class="mono">${esc(a.tag)}</h2><span style="color:var(--muted);font-size:12.5px">${esc(a.brand)} ${esc(a.model)}</span></div>
+      <div><h2 class="mono">${esc(a.tag)}</h2><span style="color:var(--muted);font-size:12.5px">${esc(fullModel(a))}</span></div>
       <button class="btn sm" id="dclose" style="margin-left:auto">Close</button>
     </header>
     <div class="in">
@@ -48,7 +48,7 @@ function openDrawer(id,keep){
         <dt>Department</dt><dd>${esc(a.dept)}</dd>
         <dt>Site</dt><dd>${esc(siteName(a.siteCode))}</dd>
         <dt>Status</dt><dd><span class="pill ${statusCls(a.status)}">${esc(a.status)}</span></dd>
-        <dt>Make and model</dt><dd>${esc(a.brand)} ${esc(a.model)}</dd>
+        <dt>Make and model</dt><dd>${esc(fullModel(a))}</dd>
         <dt>Serial number</dt><dd class="mono">${esc(a.serial)}</dd>
         <dt>Processor</dt><dd>${esc(a.cpu)}</dd>
         <dt>Memory</dt><dd>${esc(a.ram)}</dd>
@@ -70,6 +70,7 @@ function openDrawer(id,keep){
     </div>
     <footer>
       ${ed?`<button class="btn p" id="dsave">Save changes</button>`:''}
+      <button class="btn" id="dqr">Print QR label</button>
       ${can('admin')?`<button class="btn d" id="ddel">Delete asset</button>`:''}
       <span style="margin-left:auto;color:var(--muted);font-size:12px;align-self:center">${esc(a.tag)}</span>
     </footer>
@@ -96,6 +97,7 @@ function openDrawer(id,keep){
       }
     });
   };
+  wrap.querySelector('#dqr').onclick=()=>{QR_IDS=[a.id];VIEW='qrlabels';render();};
   const ds=wrap.querySelector('#dsave');
   if(ds)ds.onclick=async()=>{
     const g=k=>wrap.querySelector('#e_'+k).value;
@@ -135,7 +137,7 @@ function openDrawer(id,keep){
   };
   const dd=wrap.querySelector('#ddel');
   if(dd)dd.onclick=async()=>{
-    if(!confirm('Delete '+a.tag+'?'))return;
+    if(!await confirmDialog({title:'Delete '+a.tag+'?',message:'This asset will be removed from the register for good. This cannot be undone.',confirmLabel:'Delete asset',danger:true}))return;
     try{
       await API.deleteAsset(a.id);
       S.assets=S.assets.filter(x=>x.id!==a.id);SEL.delete(a.id);

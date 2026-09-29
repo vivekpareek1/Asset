@@ -80,7 +80,7 @@ function vImport(v){
     };
     if(window.XLSX)return go();
     const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.src='/vendor/xlsx.full.min.js';
     s.onload=go;
     s.onerror=()=>toast('Excel reader unavailable. Save the sheet as CSV and try again.');
     document.head.appendChild(s);
@@ -163,7 +163,7 @@ function vImportResult(v){
   <div class="stats" style="margin-bottom:14px">
     <div class="stat"><b>${r.created}</b><span>New assets added</span></div>
     <div class="stat"><b>${r.updated}</b><span>Existing assets updated</span></div>
-    <div class="stat ${r.skipped?'alert':''}"><b>${r.skipped}</b><span>Rows skipped</span></div>
+    <div class="stat ${r.skipped?'attn':''}"><b>${r.skipped}</b><span>Rows skipped</span></div>
   </div>
   <div class="card">
     <header><h2>Row by row</h2>

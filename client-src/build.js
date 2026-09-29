@@ -19,7 +19,7 @@ const ORDER = ['theme-core.js', 'client-api.js', 'login.js', 'part2.js', 'part3.
 
 const js = ORDER.map(f => fs.readFileSync(path.join(here, f), 'utf8').replace(/\s*$/, '') + '\n').join('');
 const head = fs.readFileSync(path.join(here, 'part1.html'), 'utf8');
-const out = head + '\n<body>\n<script>\n' + js + '</script>\n</body>\n';
+const out = head + '\n<body>\n<script>\n' + js + '</script>\n</body>\n</html>\n';
 const dest = path.join(here, '..', 'public', 'index.html');
 
 if (process.argv.includes('--check')) {

@@ -27,6 +27,47 @@ function parsePrice(v){
   const n=Number(m[0]);
   return (Number.isFinite(n)&&n>=0)?n:null;
 }
+
+/**
+ * Make and model as one readable label. Many models already start with the
+ * make ("HP AIO Desktop" by HP), and joining them blindly printed "HP HP AIO".
+ */
+function fullModel(a){
+  const b=String(a.brand||'').trim(), m=String(a.model||'').trim();
+  if(!b||b.toLowerCase()==='unbranded')return m||'\u2014';
+  if(!m)return b;
+  return m.toLowerCase().startsWith(b.toLowerCase())?m:b+' '+m;
+}
+
+/**
+ * Styled replacement for window.confirm(). Resolves true or false.
+ * Escape and clicking outside both mean "no", and focus starts on Cancel so
+ * a stray Enter can never delete anything.
+ */
+function confirmDialog({title='Are you sure?',message='',confirmLabel='Confirm',danger=false}={}){
+  return new Promise(resolve=>{
+    const prev=document.activeElement;
+    const wrap=document.createElement('div');
+    wrap.innerHTML=`<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="cdt" aria-describedby="cdm"><div class="box">
+      <h2 id="cdt">${esc(title)}</h2><p id="cdm">${esc(message)}</p>
+      <div class="row"><button class="btn ${danger?'danger':'p'}" id="cdyes">${esc(confirmLabel)}</button><button class="btn" id="cdno">Cancel</button></div>
+    </div></div>`;
+    document.body.appendChild(wrap);
+    const onKey=e=>{if(e.key==='Escape'){e.preventDefault();done(false);}};
+    const done=v=>{
+      document.removeEventListener('keydown',onKey,true);
+      wrap.remove();
+      if(prev&&typeof prev.focus==='function'){try{prev.focus();}catch(e){/* element may be gone */}}
+      resolve(v);
+    };
+    document.addEventListener('keydown',onKey,true);
+    wrap.querySelector('#cdyes').onclick=()=>done(true);
+    wrap.querySelector('#cdno').onclick=()=>done(false);
+    wrap.querySelector('.modal').addEventListener('click',e=>{if(e.target.classList.contains('modal'))done(false);});
+    wrap.querySelector('#cdno').focus();
+  });
+}
+
 function totalValue(list){return list.reduce((s,a)=>s+(a.purchasePrice||0),0);}
 
 /**
@@ -87,6 +128,32 @@ function scopedAssets(){ return S.assets; }
 
 const siteName=c=>{const s=S.sites.find(x=>x.code===c);return s?s.name:c;};
 const STATUSES=['In use','Spare','In repair','Replace due','Retired'];
+/**
+ * A ring built from plain SVG circles (stroke-dasharray per segment) rather
+ * than a charting library — five segments at most, so hand-rolling it keeps
+ * the bundle dependency-free.
+ */
+function donutSVG(parts, size=132, thickness=17){
+  const r=(size-thickness)/2, c=2*Math.PI*r, cx=size/2, cy=size/2;
+  const total=parts.reduce((s,p)=>s+p.value,0)||1;
+  let offset=0;
+  const rings=parts.filter(p=>p.value>0).map(p=>{
+    const frac=p.value/total, len=frac*c;
+    const dash=`${len} ${c-len}`;
+    const circle=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${p.color}" stroke-width="${thickness}"
+      stroke-dasharray="${dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"></circle>`;
+    offset+=len;
+    return circle;
+  }).join('');
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Status breakdown">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line2)" stroke-width="${thickness}"></circle>
+    ${rings}
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="22" font-weight="600" fill="var(--ink)">${total}</text>
+    <text x="${cx}" y="${cy+15}" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--muted)">assets</text>
+  </svg>`;
+}
+const STATUS_COLOR={'In use':'#2F6B4C','Spare':'#61717F','In repair':'#8A6614','Replace due':'#A8442A','Retired':'#7A8894'};
+
 const statusCls=s=>({'In use':'use','Spare':'spare','In repair':'repair','Replace due':'rep','Retired':'retired'}[s]||'spare');
 
 /* ---------- csv ---------- */
@@ -118,13 +185,46 @@ function download(name,text,mime){
   a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(u),1500);
 }
-function exportAssets(list,name){
+/** The shared column layout CSV and Excel export both use, so they never drift apart. */
+function exportRows(list){
   const fx=S.fields;
   const head=['Asset tag','Serial','Type','Brand','Model','Assigned to','Department','Site','CPU','RAM','Storage','OS','Status','Vendor','Purchase price','Purchase year','Warranty end',...fx.map(f=>f.label)];
-  const lines=[head.map(csvCell).join(',')];
+  const rows=list.map(a=>[a.tag,a.serial,a.type,a.brand,a.model,a.user,a.dept,siteName(a.siteCode),a.cpu,a.ram,a.storage,a.os,a.status,a.vendor||'',a.purchasePrice==null?'':a.purchasePrice,a.purchaseYear,a.warrantyEnd,...fx.map(f=>(a.custom||{})[f.key]||'')]);
+  return {head,rows};
+}
+function exportAssets(list,name){
+  const {head,rows}=exportRows(list);
   // Price exports as a bare number so a spreadsheet reads it as currency, not text.
-  list.forEach(a=>lines.push([a.tag,a.serial,a.type,a.brand,a.model,a.user,a.dept,siteName(a.siteCode),a.cpu,a.ram,a.storage,a.os,a.status,a.vendor||'',a.purchasePrice==null?'':a.purchasePrice,a.purchaseYear,a.warrantyEnd,...fx.map(f=>(a.custom||{})[f.key]||'')].map(csvCell).join(',')));
+  const lines=[head.map(csvCell).join(','),...rows.map(r=>r.map(csvCell).join(','))];
   download(name||'assets.csv',lines.join('\n'));
+}
+/**
+ * A genuine .xlsx (not a renamed CSV): numeric cells stay numeric, so a price
+ * column can be summed in Excel without a "convert to number" step first.
+ * Lazily loads the same SheetJS build the Excel import already uses.
+ */
+function exportAssetsXlsx(list,name){
+  const build=()=>{
+    const {head,rows}=exportRows(list);
+    const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
+    const priceCol=head.indexOf('Purchase price');
+    if(priceCol>=0){
+      rows.forEach((r,i)=>{
+        const ref=XLSX.utils.encode_cell({r:i+1,c:priceCol});
+        if(r[priceCol]!=='' && ws[ref])ws[ref].t='n';
+      });
+    }
+    ws['!cols']=head.map(h=>({wch:Math.max(10,h.length+2)}));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Assets');
+    XLSX.writeFile(wb,name||'assets.xlsx');
+  };
+  if(window.XLSX)return build();
+  const s=document.createElement('script');
+  s.src='/vendor/xlsx.full.min.js';
+  s.onload=build;
+  s.onerror=()=>toast('Excel export unavailable right now \u2014 try Export CSV instead.');
+  document.head.appendChild(s);
 }
 
 /* ---------- filtering ---------- */

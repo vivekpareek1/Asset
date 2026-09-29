@@ -147,9 +147,9 @@ function vFields(v){
   };
   v.querySelectorAll('[data-req]').forEach(c=>c.onchange=()=>run(()=>API.updateField(c.dataset.req,{required:c.checked})));
   v.querySelectorAll('[data-tab]').forEach(c=>c.onchange=()=>run(()=>API.updateField(c.dataset.tab,{inTable:c.checked})));
-  v.querySelectorAll('[data-delf]').forEach(b=>b.onclick=()=>{
+  v.querySelectorAll('[data-delf]').forEach(b=>b.onclick=async()=>{
     const f=S.fields.find(x=>x.id===b.dataset.delf);
-    if(!confirm('Remove "'+f.label+'"? Values already recorded on assets stay in storage but stop showing.'))return;
+    if(!await confirmDialog({title:'Remove "'+f.label+'"?',message:'Values already recorded on assets stay in storage but stop showing.',confirmLabel:'Remove field',danger:true}))return;
     run(()=>API.deleteField(b.dataset.delf),'Field removed');
   });
 }
