@@ -418,3 +418,19 @@ test('import results show row-by-row detail, including why a row was skipped', a
   assert.equal(Number(total.c), 2, 'one updated in place, one genuinely new — never three');
   await b.close();
 });
+
+test('import auto-mapping matches the real sheet headers, and State no longer collides with Status', async () => {
+  const b = await browser();
+  await signIn(b);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'import'));
+  await wait(300);
+  b.$('#ipaste').value =
+    'Asset Name,Product Manufracturer,Asset Name / Description,Serial Number,State,User Name\n' +
+    'DRL-IT-LAP-00005,Dell,Latitude 5420,ABC123,Maharashtra,Someone';
+  b.click(b.$('#iparse'));
+  await wait(400);
+  const mapped = b.$$('[data-map]').map(s => s.value);
+  assert.deepEqual(mapped, ['tag', 'brand', 'model', 'serial', '', 'user'],
+    'Asset Name -> tag, the typo column -> brand, Description -> model, State left for manual mapping');
+  await b.close();
+});

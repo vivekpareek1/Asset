@@ -9,19 +9,29 @@ const TARGETS=[
 function guessMap(h){
   const s=String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
   const g={
-    tag:['assettag','tag','assetid','assetcode','assetno'],
+    // 'assetname' added: on Vivek's real sheet "Asset Name" is the unique
+    // per-machine identifier (e.g. "DRL-IT-LAP-00005"), not a description —
+    // it belongs on the tag, not the model.
+    tag:['assettag','tag','assetid','assetcode','assetno','assetname'],
     serial:['serial','serialnumber','serialno','sno'],
     siteCode:['site','sitename','sitecode','location','branch','office'],
     dept:['dept','department','division'],
     user:['username','user','assignedto','employee','name','owner','custodian'],
     type:['type','assettype','devicetype','desktopaio','category'],
-    brand:['make','brand','manufacturer','oem'],
-    model:['model','machine','modelno'],
+    // 'productmanufracturer' is the literal (misspelled) header on the real
+    // sheet — kept verbatim so that exact column keeps auto-mapping correctly
+    // rather than silently going unmapped because of a typo in the source file.
+    brand:['make','brand','manufacturer','oem','productmanufracturer'],
+    model:['model','machine','modelno','assetnamedescription'],
     cpu:['cpu','processor','proc'],
     ram:['ram','memory'],
     storage:['storage','hdd','ssd','harddisk','hddssd','disk','harddrive'],
     os:['os','operatingsystem','windows'],
-    status:['status','condition','state'],
+    // 'state' removed as a status synonym: on Vivek's sheet "State" is a
+    // geography field (which Indian state a site is in), not device condition,
+    // and the two would otherwise collide on import. 'condition' still covers
+    // status on its own.
+    status:['status','condition'],
     vendor:['vendor','supplier','vendorname','suppliername','purchasedfrom','boughtfrom','dealer','seller','party'],
     purchasePrice:['price','purchaseprice','cost','amount','rate','value','invoiceamount','purchasecost'],
     purchaseYear:['purchaseyear','year','purchased','purchasedate','buyyear'],
