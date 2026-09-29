@@ -36,7 +36,24 @@ const FIELDS = [
   { label: 'Verification of Assets', type: 'select', options: ['Verified', 'Not Verified'] },
   { label: 'Verification Date', type: 'date' },
   { label: 'Check Time', type: 'text' },
-  { label: 'Remark', type: 'text' }
+  { label: 'Remark', type: 'text' },
+
+  // --- second batch: software and account licensing ---
+  // "Google Drive Active/Inactive" was asked for again here but is the same
+  // thing as 'G Drive Mapping' above (added in the first batch) — not
+  // duplicated under a second name.
+  { label: 'Workspace Email ID', type: 'text' },
+  { label: 'Workspace License', type: 'select', options: ['Active', 'Inactive'] },
+  { label: 'MS Office License', type: 'select', options: ['Yes', 'No'] },
+  { label: 'MS Office License Expiry Date', type: 'date' },
+  { label: 'ZWCAD License', type: 'select', options: ['Yes', 'No'] },
+  { label: 'ZWCAD License Expiry Date', type: 'date' },
+  // Catch-all for any other software, distinct from the free-text
+  // 'Software Details' field — this is one name plus its own activation
+  // and expiry, for whatever isn't MS Office or ZWCAD specifically.
+  { label: 'Additional Software Name', type: 'text' },
+  { label: 'Additional Software Activation Date', type: 'date' },
+  { label: 'Additional Software Expiry Date', type: 'date' }
 ];
 
 /** Same slugging rule the admin UI itself uses, so keys match what it would generate. */
