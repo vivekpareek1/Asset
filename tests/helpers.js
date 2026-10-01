@@ -71,4 +71,14 @@ async function seedMasters(c) {
   await c.post('/api/departments', { name: 'Unassigned' });
 }
 
-module.exports = { harness, client, loginAs, seedMasters, ADMIN };
+/** Signed in as the admin, with the standard sites/departments seeded. Used
+ * by most test files that need a working register, not just an empty one. */
+async function asAdmin() {
+  const { app, db } = await harness();
+  const c = client(app);
+  await loginAs(c, ADMIN.email, ADMIN.password);
+  await seedMasters(c);
+  return { app, db, c };
+}
+
+module.exports = { harness, client, loginAs, seedMasters, asAdmin, ADMIN };

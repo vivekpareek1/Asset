@@ -1,18 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { harness, client, loginAs, seedMasters, ADMIN } = require('./helpers');
-
-async function setup() {
-  const { app, db } = await harness();
-  const c = client(app);
-  await loginAs(c, ADMIN.email, ADMIN.password);
-  await seedMasters(c);
-  return { app, db, c };
-}
+const { harness, client, loginAs, seedMasters, asAdmin, ADMIN } = require('./helpers');
 
 test('two edits to DIFFERENT assets both survive', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'One', siteCode: 'HO', dept: 'IT' })).body.asset;
   const b = (await c.post('/api/assets', { user: 'Two', siteCode: 'HO', dept: 'IT' })).body.asset;
 
@@ -32,7 +24,7 @@ test('two edits to DIFFERENT assets both survive', async () => {
 });
 
 test('the second edit to the SAME asset is refused, not silently lost', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'Shared', siteCode: 'HO', dept: 'IT' })).body.asset;
 
   // Both people load version 1.
@@ -54,7 +46,7 @@ test('the second edit to the SAME asset is refused, not silently lost', async ()
 });
 
 test('simultaneous writes to one asset: exactly one wins', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'Race', siteCode: 'HO', dept: 'IT' })).body.asset;
   const sessions = [];
   for (let i = 0; i < 5; i++) {
@@ -75,7 +67,7 @@ test('simultaneous writes to one asset: exactly one wins', async () => {
 });
 
 test('an update without a version is refused outright', async () => {
-  const { c } = await setup();
+  const { c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'NoVer', siteCode: 'HO', dept: 'IT' })).body.asset;
   const r = await c.put(`/api/assets/${a.id}`, { vendor: 'X' });
   assert.equal(r.status, 400);
@@ -84,7 +76,7 @@ test('an update without a version is refused outright', async () => {
 });
 
 test('bulk edits do not disturb assets outside the selection', async () => {
-  const { c } = await setup();
+  const { c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'A', siteCode: 'HO', dept: 'IT' })).body.asset;
   const b = (await c.post('/api/assets', { user: 'B', siteCode: 'HO', dept: 'IT' })).body.asset;
   const r = await c.post('/api/assets/bulk', { ids: [a.id], patch: { status: 'In repair' } });
@@ -98,7 +90,7 @@ test('bulk edits do not disturb assets outside the selection', async () => {
 });
 
 test('bulk rejects an unknown column and an invalid value', async () => {
-  const { c } = await setup();
+  const { c } = await asAdmin();
   const a = (await c.post('/api/assets', { user: 'A', siteCode: 'HO', dept: 'IT' })).body.asset;
   assert.equal((await c.post('/api/assets/bulk', { ids: [a.id], patch: { tag: 'HACK' } })).status, 400);
   assert.equal((await c.post('/api/assets/bulk', { ids: [a.id], patch: { status: 'Exploded' } })).status, 422);
@@ -107,7 +99,7 @@ test('bulk rejects an unknown column and an invalid value', async () => {
 });
 
 test('a duplicate asset tag is refused', async () => {
-  const { c } = await setup();
+  const { c } = await asAdmin();
   await c.post('/api/assets', { user: 'A', siteCode: 'HO', dept: 'IT', tag: 'HO-PC-777' });
   const dup = await c.post('/api/assets', { user: 'B', siteCode: 'HO', dept: 'IT', tag: 'ho-pc-777' });
   assert.equal(dup.status, 409, 'the check is case-insensitive');
@@ -116,7 +108,7 @@ test('a duplicate asset tag is refused', async () => {
 });
 
 test('concurrent creates never collide on a generated tag', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const sessions = [];
   for (let i = 0; i < 8; i++) {
     const s = client(app);
@@ -136,7 +128,7 @@ test('concurrent creates never collide on a generated tag', async () => {
 });
 
 test('renaming a department moves its assets in one transaction', async () => {
-  const { c, db } = await setup();
+  const { c, db } = await asAdmin();
   await c.post('/api/assets', { user: 'A', siteCode: 'HO', dept: 'Legal' });
   await c.post('/api/assets', { user: 'B', siteCode: 'HO', dept: 'Legal' });
   const dept = (await db.get('SELECT * FROM departments WHERE name = ?', ['Legal']));
@@ -149,7 +141,7 @@ test('renaming a department moves its assets in one transaction', async () => {
 });
 
 test('a site with assets cannot be deleted', async () => {
-  const { c, db } = await setup();
+  const { c, db } = await asAdmin();
   await c.post('/api/assets', { user: 'A', siteCode: 'HO', dept: 'IT' });
   const site = await db.get('SELECT * FROM sites WHERE code = ?', ['HO']);
   const r = await c.del(`/api/sites/${site.id}`, {});
@@ -159,7 +151,7 @@ test('a site with assets cannot be deleted', async () => {
 });
 
 test('import creates and updates without erasing blanks', async () => {
-  const { c } = await setup();
+  const { c } = await asAdmin();
   const r1 = await c.post('/api/assets/import', { rows: [
     { user: 'Imp One', siteCode: 'HO', dept: 'IT', vendor: 'Ingram', purchasePrice: '52,000' },
     { user: 'Imp Two', siteCode: 'HO', dept: 'IT', vendor: 'Ingram', purchasePrice: 'Rs. 48000' }
@@ -183,7 +175,7 @@ test('import creates a site for an unrecognised name instead of skipping it', as
   // kept here as a one-line regression marker on the exact case this test
   // used to assert the OLD (wrong) behaviour for: an unrecognised site name
   // used to be silently dropped. It now becomes a new site.
-  const { c } = await setup();
+  const { c } = await asAdmin();
   const r = await c.post('/api/assets/import', { rows: [
     { user: 'Good', siteCode: 'HO' },
     { user: 'Also Good', siteCode: 'NOWHERE' },
@@ -199,7 +191,7 @@ test('import creates a site for an unrecognised name instead of skipping it', as
 /* ---- races that only show up under real concurrent writers ---- */
 
 test('concurrent sites with the same code: exactly one wins, the rest get 409, none crash', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const sessions = [];
   for (let i = 0; i < 6; i++) {
     const s = client(app);
@@ -216,7 +208,7 @@ test('concurrent sites with the same code: exactly one wins, the rest get 409, n
 });
 
 test('concurrent users with the same email: exactly one account, no raw errors', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const sessions = [];
   for (let i = 0; i < 6; i++) {
     const s = client(app);
@@ -232,7 +224,7 @@ test('concurrent users with the same email: exactly one account, no raw errors',
 });
 
 test('an explicit tag under concurrent creation still resolves cleanly', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const sessions = [];
   for (let i = 0; i < 5; i++) {
     const s = client(app);
@@ -247,7 +239,7 @@ test('an explicit tag under concurrent creation still resolves cleanly', async (
 });
 
 test('an import running alongside a live asset-creation burst does not corrupt either', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const importer = client(app);
   await loginAs(importer, ADMIN.email, ADMIN.password);
   const rows = Array.from({ length: 15 }, (_, i) => ({ user: 'Bulk ' + i, siteCode: 'HO', dept: 'IT' }));
@@ -276,7 +268,7 @@ test('an import running alongside a live asset-creation burst does not corrupt e
 });
 
 test('two imports at once, both creating rows for the same new department, do not fail', async () => {
-  const { app, c } = await setup();
+  const { app, c } = await asAdmin();
   const a = client(app), b = client(app);
   await loginAs(a, ADMIN.email, ADMIN.password);
   await loginAs(b, ADMIN.email, ADMIN.password);

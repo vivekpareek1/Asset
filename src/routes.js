@@ -409,7 +409,7 @@ function createRouter({ db, log }) {
        value.purchasePrice ?? null, value.purchaseYear ?? null, value.warrantyEnd || '',
        JSON.stringify(value.custom || {}), '[]', nowISO()]);
 
-    let tag = wantedTag || await nextTag(db, value.siteCode);
+    let tag = wantedTag || await nextTagTx(db, value.siteCode);
     const MAX_RETRIES = 5;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -431,7 +431,7 @@ function createRouter({ db, log }) {
         if (attempt >= MAX_RETRIES) {
           return fail(res, 409, 'TAG_IN_USE', 'Could not allocate a free asset tag. Try again.');
         }
-        tag = await nextTag(db, value.siteCode);   // someone else just took the old one; pick the next
+        tag = await nextTagTx(db, value.siteCode);   // someone else just took the old one; pick the next
       }
     }
     await log(db, req.user.name, 'Created', `${tag} — ${value.user}`);
@@ -806,7 +806,6 @@ function createRouter({ db, log }) {
     res.json({ ...result, report });
   });
 
-  async function nextTag(d, code) { return nextTagTx(d, code); }
   /**
    * @param {number} spread On the first attempt, 0 — tags stay tidy and
    *   sequential for the common case of one writer. On a retry after a

@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
-const { harness, client, loginAs, seedMasters, ADMIN } = require('./helpers');
+const { harness, client, loginAs, seedMasters, asAdmin, ADMIN } = require('./helpers');
 
 /* ---- fixtures: real files, not stubs ---- */
 let TBL = null;
@@ -34,13 +34,6 @@ const SVG_EVIL = Buffer.from('<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe S
   '<a href="javascript:alert(1)"><rect width="10" height="10" fill="#123456"/></a>' +
   '<foreignObject><img src=x onerror=alert(2)></foreignObject></svg>');
 
-async function asAdmin() {
-  const { app, db } = await harness();
-  const c = client(app);
-  await loginAs(c, ADMIN.email, ADMIN.password);
-  await seedMasters(c);
-  return { app, db, c };
-}
 async function asRole(app, c, role, email) {
   await c.post('/api/users', { name: role + ' User', email, role, password: 'a-fine-password-1' });
   const s = client(app);
@@ -209,6 +202,26 @@ test('the uploads route refuses a traversal-shaped name', async () => {
 });
 
 /* ---- theme validation ---- */
+
+test("the client's font allowlist matches the server's, so they can't silently drift", async () => {
+  // The client keeps its own richer font metadata (label, CSS stack, webfont
+  // URL) that the server has no reason to know about — that part is not
+  // duplication, it's a client-only rendering concern. The one thing that
+  // DOES need to match exactly is the set of valid ids: theme-core.js hand-
+  // maintains FONT_FAMILIES, settings.js hand-maintains FONT_IDS, and nothing
+  // stops someone editing one and forgetting the other. This test is that
+  // guard: a silent drift here becomes a loud test failure instead.
+  const { c } = await asAdmin();
+  const serverFonts = (await c.get('/api/settings/theme')).body.fonts;
+
+  const clientSrc = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'client-src', 'theme-core.js'), 'utf8');
+  const ids = [...clientSrc.matchAll(/id:'([a-z-]+)'/g)].map(m => m[1]);
+
+  assert.ok(ids.length > 0, 'could not extract any font ids from theme-core.js — check the regex above');
+  assert.deepEqual([...ids].sort(), [...serverFonts].sort());
+  await c.close();
+});
 
 test('CSS injection through font-family is refused', async () => {
   const { c } = await asAdmin();

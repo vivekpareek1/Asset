@@ -82,6 +82,33 @@ function vDash(v){
   const deptRows=Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const maxDept=Math.max(1,...deptRows.map(r=>r[1]));
 
+  // Every date-type custom field whose label names it as an expiry (MS Office,
+  // ZWCAD, and whatever else gets added later) is picked up automatically —
+  // nothing here hardcodes field names, so a new "X Licence Expiry Date" field
+  // added later shows up on this list without a code change.
+  const expiryFields=S.fields.filter(f=>f.type==='date'&&/expiry/i.test(f.label));
+  const today=new Date(); today.setHours(0,0,0,0);
+  const daysUntil=d=>{const t=new Date(d);if(isNaN(t))return null;t.setHours(0,0,0,0);return Math.round((t-today)/86400000);};
+  // Bounded on BOTH sides: a warranty that lapsed three years ago is already
+  // counted in the "Out of warranty" stat above and re-listing it here would
+  // just be noise. This card is specifically for what needs a decision soon —
+  // recently lapsed (still worth chasing) through the next 60 days.
+  const expiring=[];
+  A.forEach(a=>{
+    if(a.warrantyEnd){const d=daysUntil(a.warrantyEnd);if(d!=null&&d>=-30&&d<=60)expiring.push({a,label:'Warranty',date:a.warrantyEnd,days:d});}
+    expiryFields.forEach(f=>{
+      const v=(a.custom||{})[f.key];
+      if(!v)return;
+      const d=daysUntil(v);
+      if(d!=null&&d>=-30&&d<=60)expiring.push({a,label:f.label.replace(/ Expiry Date$/i,''),date:v,days:d});
+    });
+  });
+  expiring.sort((x,y)=>x.days-y.days);
+  const overdue=expiring.filter(x=>x.days<0).length;
+  const next30=expiring.filter(x=>x.days>=0&&x.days<=30).length;
+  const next60=expiring.filter(x=>x.days>30&&x.days<=60).length;
+  const expiringShown=expiring.slice(0,15);
+
   const buckets=[
     {t:'2010–2013',c:'#A8442A',f:a=>a.purchaseYear<=2013},
     {t:'2014–2016',c:'#8A6614',f:a=>a.purchaseYear>=2014&&a.purchaseYear<=2016},
@@ -99,6 +126,26 @@ function vDash(v){
       <div class="stat"><b>${lowRam}</b><span>Running on 4 GB or less</span></div>
       <div class="stat"><b>${outWarr}</b><span>Out of warranty</span></div>
       <div class="stat"><b style="font-size:calc(var(--app-font-size) * 1.5)">${money(spend)}</b><span>Recorded spend${priced.length<A.length?` \u00b7 ${A.length-priced.length} without a price`:''}</span></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Expiring soon</h2><span style="margin-left:auto;color:var(--muted);font-size:12.5px">Warranty and licence dates, last 30 to next 60 days</span></header>
+      <div class="in">
+        ${expiring.length?`
+        <div class="row" style="gap:18px;margin-bottom:14px">
+          <div><b class="mono" style="font-size:22px;color:${overdue?'var(--oxide)':'var(--ink)'}">${overdue}</b> <span style="color:var(--muted);font-size:12.5px">overdue</span></div>
+          <div><b class="mono" style="font-size:22px;color:${next30?'var(--amber)':'var(--ink)'}">${next30}</b> <span style="color:var(--muted);font-size:12.5px">next 30 days</span></div>
+          <div><b class="mono" style="font-size:22px">${next60}</b> <span style="color:var(--muted);font-size:12.5px">31–60 days</span></div>
+        </div>
+        <div class="tw" style="max-height:340px"><table><thead><tr><th>Asset</th><th>Assigned to</th><th>Item</th><th>Expires</th><th>Days</th></tr></thead>
+          <tbody>${expiringShown.map(x=>`<tr data-open="${x.a.id}" style="cursor:pointer">
+            <td class="mono">${esc(x.a.tag)}</td><td>${esc(x.a.user)}</td><td>${esc(x.label)}</td>
+            <td class="mono">${esc(x.date)}</td>
+            <td class="mono" style="color:${x.days<0?'var(--oxide)':x.days<=7?'var(--amber)':'var(--muted)'}">${x.days<0?Math.abs(x.days)+' over':x.days+'d'}</td>
+          </tr>`).join('')}</tbody></table></div>
+        ${expiring.length>expiringShown.length?`<p style="margin:10px 0 0;color:var(--muted);font-size:12.5px">${expiring.length-expiringShown.length} more not shown — narrow it down from Reports.</p>`:''}
+        `:`<p style="margin:0;color:var(--muted);font-size:13px">Nothing due in this window — no warranty or licence expiry within the last 30 or next 60 days.</p>`}
+      </div>
     </div>
 
     <div class="card">
@@ -143,6 +190,7 @@ function vDash(v){
     </div></div>
   </div>`;
   v.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{F={...F,status:b.dataset.jump,page:1};VIEW='assets';render();});
+  v.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openDrawer(el.dataset.open));
 }
 
 /* ---------- assets ---------- */

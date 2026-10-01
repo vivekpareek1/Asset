@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
-const { harness, client, loginAs, seedMasters, ADMIN } = require('./helpers');
+const { harness, client, loginAs, seedMasters, asAdmin, ADMIN } = require('./helpers');
 
 let TBL = null;
 function crc32(buf) {
@@ -24,14 +24,6 @@ function makePng(r = 30, g = 90, b = 120) {
   return Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
     chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from([0, r, g, b]))),
     chunk('IEND', Buffer.alloc(0))]);
-}
-
-async function asAdmin() {
-  const { app, db } = await harness();
-  const c = client(app);
-  await loginAs(c, ADMIN.email, ADMIN.password);
-  await seedMasters(c);
-  return { app, db, c };
 }
 
 test('a logo is stored as binary, not base64 text', async () => {

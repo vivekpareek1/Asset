@@ -2,15 +2,7 @@
 /** Adversarial checks: things that should be impossible, attempted directly. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { harness, client, loginAs, seedMasters, ADMIN } = require('./helpers');
-
-async function asAdmin() {
-  const { app, db } = await harness();
-  const c = client(app);
-  await loginAs(c, ADMIN.email, ADMIN.password);
-  await seedMasters(c);
-  return { app, db, c };
-}
+const { harness, client, loginAs, seedMasters, asAdmin, ADMIN } = require('./helpers');
 
 test('SQL injection through a bulk patch key is refused', async () => {
   const { c, db } = await asAdmin();

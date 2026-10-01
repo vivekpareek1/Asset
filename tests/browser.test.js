@@ -434,3 +434,68 @@ test('import auto-mapping matches the real sheet headers, and State no longer co
     'Asset Name -> tag, the typo column -> brand, Description -> model, State left for manual mapping');
   await b.close();
 });
+
+test('dashboard surfaces expiring warranty/licence dates, bucketed and sorted correctly', async () => {
+  const b = await browser();
+  await signIn(b);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'sites')); await wait(200);
+  b.$('#sname').value = 'HO'; b.$('#scode').value = 'HO'; b.click(b.$('#saddb')); await wait(400);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'depts')); await wait(200);
+  b.$('#dname').value = 'IT'; b.click(b.$('#daddb')); await wait(400);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'fields')); await wait(200);
+  b.$('#flabel').value = 'ZWCAD License Expiry Date'; b.$('#ftype2').value = 'date';
+  b.click(b.$('#faddb')); await wait(400);
+
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'add')); await wait(250);
+  b.$('#n_user').value = 'Overdue Owner';
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  const overdue = fmt(new Date(today.getTime() - 5 * 86400000));
+  const soon = fmt(new Date(today.getTime() + 10 * 86400000));
+  b.$('#n_warrantyEnd').value = overdue;
+  b.click(b.$('#nsave')); await wait(600);
+
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'add')); await wait(250);
+  b.$('#n_user').value = 'Soon Owner';
+  b.$$('[id^="n_cf_zwcad"]')[0].value = soon;
+  b.click(b.$('#nsave')); await wait(600);
+
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'dash')); await wait(400);
+  const text = b.w.document.body.textContent;
+  assert.match(text, /Expiring soon/);
+  assert.match(text, /1\s*overdue/);
+  assert.match(text, /1\s*next 30 days/);
+
+  const rows = b.$$('tr[data-open]');
+  assert.equal(rows.length, 2, 'both the overdue warranty and the upcoming licence show up');
+  // sorted most-urgent first: the overdue one appears before the 10-day one
+  const firstRowText = rows[0].textContent;
+  assert.match(firstRowText, /Overdue Owner|Warranty/);
+  await b.close();
+});
+
+test('a garbage value in a date-typed custom field (possible via import) does not break the dashboard', async () => {
+  // pickCustom() on the server only checks that the field KEY is valid, not
+  // that the VALUE matches the field's declared type - so an imported sheet
+  // with "N/A" or a malformed date in a date column is a real, reachable
+  // state, not a hypothetical one. The dashboard's expiry scan must survive it.
+  const b = await browser();
+  await signIn(b);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'fields')); await wait(200);
+  b.$('#flabel').value = 'Test Expiry Date'; b.$('#ftype2').value = 'date';
+  b.click(b.$('#faddb')); await wait(400);
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'sites')); await wait(200);
+  b.$('#sname').value = 'HO'; b.$('#scode').value = 'HO'; b.click(b.$('#saddb')); await wait(400);
+
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'import')); await wait(200);
+  b.$('#ipaste').value = 'User name,Site,Test Expiry Date\nGarbage,HO,not-a-real-date';
+  b.click(b.$('#iparse')); await wait(400);
+  b.click(b.$('#idoit')); await wait(700);
+
+  const errs = [];
+  b.w.addEventListener('error', e => errs.push(e.message));
+  b.click(b.$$('[data-nav]').find(x => x.dataset.nav === 'dash')); await wait(400);
+  assert.deepEqual(errs, []);
+  assert.ok(b.$('.stats'), 'dashboard still rendered');
+  await b.close();
+});
